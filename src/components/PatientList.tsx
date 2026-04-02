@@ -34,6 +34,7 @@ interface PatientListProps {
   onDeletePatient: (id: string) => void;
   onBulkImport: (patients: Omit<Patient, 'id'>[]) => Promise<void>;
   onTransferOut: (patient: Patient) => void;
+  onActivate: (patient: Patient) => void;
 }
 
 export function PatientList({ 
@@ -44,7 +45,8 @@ export function PatientList({
   onRecordVisit, 
   onDeletePatient, 
   onBulkImport,
-  onTransferOut
+  onTransferOut,
+  onActivate
 }: PatientListProps) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'All' | 'Active' | 'LTFU' | 'Graduating' | 'Transferred'>('All');
@@ -617,6 +619,17 @@ export function PatientList({
                       >
                         Transfer
                       </Button>
+                      {patient.ltfuStatus !== 'Active' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 text-emerald-600 hover:bg-emerald-50"
+                          onClick={() => onActivate(patient)}
+                          title="Reactivate Client"
+                        >
+                          Activate
+                        </Button>
+                      )}
                       <button
                         onClick={() => onEditPatient(patient)}
                         className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600"

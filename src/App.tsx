@@ -13,6 +13,7 @@ import { Modal } from './components/ui/Modal';
 import { PatientForm } from './components/PatientForm';
 import { VisitForm } from './components/VisitForm';
 import { PatientDetails } from './components/PatientDetails';
+import { TransferForm } from './components/TransferForm';
 import { Patient, Visit } from './types';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from './contexts/AuthContext';
@@ -36,6 +37,7 @@ export default function App() {
   const [isPatientModalOpen, setIsPatientModalOpen] = useState(false);
   const [isVisitModalOpen, setIsVisitModalOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | undefined>();
   const [selectedVisitType, setSelectedVisitType] = useState<string | undefined>();
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -119,18 +121,39 @@ export default function App() {
     setIsVisitModalOpen(true);
   };
 
-  const handleTransferOut = async (patient: Patient) => {
-    if (window.confirm(`Are you sure you want to mark ${patient.firstName} ${patient.lastName} as Transferred Out?`)) {
+  const handleTransferOut = (patient: Patient) => {
+    setSelectedPatient(patient);
+    setIsTransferModalOpen(true);
+  };
+
+  const handleTransferSubmit = async (destination: string) => {
+    if (!selectedPatient) return;
+    try {
+      await updatePatient(selectedPatient.id!, { ltfuStatus: 'Transferred Out' });
+      await addVisit(selectedPatient.id!, {
+        date: new Date().toISOString().split('T')[0],
+        type: 'Transfer Out',
+        notes: `Client transferred out to ${destination}.`
+      });
+      setIsTransferModalOpen(false);
+      setIsDetailsModalOpen(false);
+    } catch (error) {
+      console.error('Error transferring out patient:', error);
+    }
+  };
+
+  const handleActivate = async (patient: Patient) => {
+    if (window.confirm(`Are you sure you want to reactivate ${patient.firstName} ${patient.lastName}?`)) {
       try {
-        await updatePatient(patient.id!, { ltfuStatus: 'Transferred Out' });
+        await updatePatient(patient.id!, { ltfuStatus: 'Active' });
         await addVisit(patient.id!, {
           date: new Date().toISOString().split('T')[0],
-          type: 'Transfer Out',
-          notes: 'Client transferred out to another facility.'
+          type: 'Reactivation',
+          notes: 'Client reactivated and returned to care.'
         });
         setIsDetailsModalOpen(false);
       } catch (error) {
-        console.error('Error transferring out patient:', error);
+        console.error('Error reactivating patient:', error);
       }
     }
   };
@@ -193,6 +216,7 @@ export default function App() {
             onDeletePatient={handleDeletePatient}
             onBulkImport={handleBulkImport}
             onTransferOut={handleTransferOut}
+            onActivate={handleActivate}
           />
         );
       case 'appointments':
@@ -286,6 +310,22 @@ export default function App() {
               handleRecordVisit(p);
             }}
             onTransferOut={handleTransferOut}
+            onActivate={handleActivate}
+          />
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={isTransferModalOpen}
+        onClose={() => setIsTransferModalOpen(false)}
+        title="Transfer Out Client"
+        size="md"
+      >
+        {selectedPatient && (
+          <TransferForm
+            patient={selectedPatient}
+            onSubmit={handleTransferSubmit}
+            onCancel={() => setIsTransferModalOpen(false)}
           />
         )}
       </Modal>

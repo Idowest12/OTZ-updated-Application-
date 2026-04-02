@@ -29,9 +29,10 @@ interface PatientDetailsProps {
   onEdit: (patient: Patient) => void;
   onRecordVisit: (patient: Patient) => void;
   onTransferOut: (patient: Patient) => void;
+  onActivate: (patient: Patient) => void;
 }
 
-export function PatientDetails({ patient, onClose, onEdit, onRecordVisit, onTransferOut }: PatientDetailsProps) {
+export function PatientDetails({ patient, onClose, onEdit, onRecordVisit, onTransferOut, onActivate }: PatientDetailsProps) {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -159,6 +160,17 @@ export function PatientDetails({ patient, onClose, onEdit, onRecordVisit, onTran
                 <ArrowRightLeft className="h-4 w-4" />
                 Transfer Out Client
               </Button>
+
+              {patient.ltfuStatus !== 'Active' && (
+                <Button 
+                  variant="outline" 
+                  className="w-full gap-2 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 border-emerald-100"
+                  onClick={() => onActivate(patient)}
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  Reactivate Client
+                </Button>
+              )}
             </div>
           </Card>
         </div>
