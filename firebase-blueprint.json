@@ -1,0 +1,71 @@
+{
+  "entities": {
+    "Patient": {
+      "title": "Patient",
+      "description": "A patient registered in the OTZ clinic.",
+      "type": "object",
+      "properties": {
+        "clinicNumber": { "type": "string", "description": "Unique clinic identification number." },
+        "firstName": { "type": "string", "description": "Patient's first name." },
+        "lastName": { "type": "string", "description": "Patient's last name." },
+        "age": { "type": "integer", "description": "Patient's age." },
+        "gender": { "type": "string", "enum": ["Male", "Female"], "description": "Patient's gender." },
+        "phone": { "type": "string", "description": "Contact phone number." },
+        "address": { "type": "string", "description": "Residential address." },
+        "enrollmentDate": { "type": "string", "format": "date", "description": "Date of enrollment in OTZ." },
+        "ltfuStatus": { "type": "string", "enum": ["Active", "LTFU", "Dead", "Transferred Out"], "description": "Current status of the patient." },
+        "lastVisitDate": { "type": "string", "format": "date", "description": "Date of the most recent clinic visit." },
+        "nextAppointmentDate": { "type": "string", "format": "date", "description": "Date of the next scheduled appointment." },
+        "vlSuppressed": { "type": "boolean", "description": "Whether the patient's viral load is suppressed." },
+        "lastVlDate": { "type": "string", "format": "date", "description": "Date of the last VL test." },
+        "lastVlResult": { "type": "number", "description": "Result of the last VL test." }
+      },
+      "required": ["clinicNumber", "firstName", "lastName", "age", "gender", "enrollmentDate", "ltfuStatus"]
+    },
+    "Visit": {
+      "title": "Visit",
+      "description": "A clinical visit or drug pickup record.",
+      "type": "object",
+      "properties": {
+        "patientId": { "type": "string", "description": "ID of the patient." },
+        "date": { "type": "string", "format": "date", "description": "Date of the visit." },
+        "type": { "type": "string", "enum": ["Drug Pickup & VL Test", "Drug Pickup (Proxy)", "Clinical Review", "Counselling", "Other"], "description": "Type of visit." },
+        "notes": { "type": "string", "description": "Clinical notes or observations." },
+        "vlResult": { "type": "number", "description": "VL result if a test was performed." },
+        "nextAppointmentDate": { "type": "string", "format": "date", "description": "Next scheduled appointment date." }
+      },
+      "required": ["patientId", "date", "type"]
+    },
+    "Appointment": {
+      "title": "Appointment",
+      "description": "A scheduled clinic appointment.",
+      "type": "object",
+      "properties": {
+        "patientId": { "type": "string", "description": "ID of the patient." },
+        "patientName": { "type": "string", "description": "Name of the patient." },
+        "clinicNumber": { "type": "string", "description": "Clinic number of the patient." },
+        "date": { "type": "string", "format": "date", "description": "Scheduled date." },
+        "status": { "type": "string", "enum": ["Pending", "Completed", "Missed"], "description": "Status of the appointment." }
+      },
+      "required": ["patientId", "patientName", "clinicNumber", "date", "status"]
+    }
+  },
+  "firestore": {
+    "/patients/{patientId}": {
+      "schema": "Patient",
+      "description": "Collection of patient records."
+    },
+    "/patients/{patientId}/visits/{visitId}": {
+      "schema": "Visit",
+      "description": "Sub-collection of visit records for a specific patient. (Deprecated: using top-level visits collection)"
+    },
+    "/visits/{visitId}": {
+      "schema": "Visit",
+      "description": "Top-level collection of all clinic visit records."
+    },
+    "/appointments/{appointmentId}": {
+      "schema": "Appointment",
+      "description": "Collection of scheduled appointments."
+    }
+  }
+}

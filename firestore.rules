@@ -1,0 +1,159 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: patients
+    // Document ID: {patientId}
+    // Fields:
+    //   - clinicNumber: string (required)
+    //   - firstName: string (required)
+    //   - lastName: string (required)
+    //   - age: integer (required)
+    //   - gender: string (required, 'Male' | 'Female')
+    //   - phone: string (optional)
+    //   - address: string (optional)
+    //   - enrollmentDate: string (required, date format)
+    //   - ltfuStatus: string (required, 'Active' | 'LTFU' | 'Dead' | 'Transferred Out')
+    //   - lastVisitDate: string (optional, date format)
+    //   - nextAppointmentDate: string (optional, date format)
+    //   - vlSuppressed: boolean (optional)
+    //   - lastVlDate: string (optional, date format)
+    //   - lastVlResult: number (optional)
+    //
+    // Collection: patients/{patientId}/visits
+    // Document ID: {visitId}
+    // Fields:
+    //   - patientId: string (required)
+    //   - date: string (required, date format)
+    //   - type: string (required, 'Drug Pickup & VL Test' | 'Drug Pickup (Proxy)' | 'Clinical Review' | 'Counselling' | 'Other')
+    //   - notes: string (optional)
+    //   - vlResult: number (optional)
+    //   - nextAppointmentDate: string (optional, date format)
+    //
+    // Collection: appointments
+    // Document ID: {appointmentId}
+    // Fields:
+    //   - patientId: string (required)
+    //   - patientName: string (required)
+    //   - clinicNumber: string (required)
+    //   - date: string (required, date format)
+    //   - status: string (required, 'Pending' | 'Completed' | 'Missed')
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        ((exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+          (request.auth.token.email == "idowutosin70@gmail.com" && request.auth.token.email_verified == true) ||
+          (request.auth.token.email == "idowu6259@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string &&
+        (dateStr.matches("^[0-9]{4}-[0-9]{2}-[0-9]{2}$") || 
+         dateStr.matches("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}.*Z?$"));
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidOptionalDate(data, field) {
+      return !(field in data) || data[field] == null || isValidDateString(data[field]);
+    }
+
+    function isValidPatient(data) {
+      return hasRequiredFields(['clinicNumber', 'firstName', 'lastName', 'age', 'gender', 'enrollmentDate', 'ltfuStatus']) &&
+        data.clinicNumber is string && data.clinicNumber.size() > 0 && data.clinicNumber.size() < 50 &&
+        data.firstName is string && data.firstName.size() > 0 && data.firstName.size() < 50 &&
+        data.lastName is string && data.lastName.size() > 0 && data.lastName.size() < 50 &&
+        data.age is number && data.age >= 0 && data.age < 150 &&
+        data.gender in ['Male', 'Female'] &&
+        isValidDateString(data.enrollmentDate) &&
+        data.ltfuStatus in ['Active', 'LTFU', 'Dead', 'Transferred Out'] &&
+        isValidOptionalDate(data, 'dateOfBirth') &&
+        isValidOptionalDate(data, 'lastVisitDate') &&
+        isValidOptionalDate(data, 'nextAppointmentDate') &&
+        isValidOptionalDate(data, 'lastVlDate');
+    }
+
+    function isValidVisit(data) {
+      return hasRequiredFields(['patientId', 'date', 'type']) &&
+        data.patientId is string &&
+        isValidDateString(data.date) &&
+        data.type in ['Drug Pickup & VL Test', 'Drug Pickup (Proxy)', 'Clinical Review', 'Counselling', 'Other'] &&
+        isValidOptionalDate(data, 'nextAppointmentDate');
+    }
+
+    function isValidAppointment(data) {
+      return hasRequiredFields(['patientId', 'patientName', 'clinicNumber', 'date', 'status']) &&
+        data.patientId is string &&
+        data.patientName is string &&
+        data.clinicNumber is string &&
+        isValidDateString(data.date) &&
+        data.status in ['Pending', 'Completed', 'Missed'];
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow create, update: if isAdmin();
+    }
+
+    match /patients/{patientId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidPatient(request.resource.data);
+      allow update: if isAuthenticated() && isValidPatient(request.resource.data);
+      allow delete: if isAdmin();
+
+      match /visits/{visitId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && isValidVisit(request.resource.data);
+        allow update: if isAuthenticated() && isValidVisit(request.resource.data);
+        allow delete: if isAdmin();
+      }
+    }
+
+    match /visits/{visitId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidVisit(request.resource.data);
+      allow update: if isAuthenticated() && isValidVisit(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /appointments/{appointmentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidAppointment(request.resource.data);
+      allow update: if isAuthenticated() && isValidAppointment(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /test/{docId} {
+      allow read: if isAuthenticated();
+    }
+  }
+}
