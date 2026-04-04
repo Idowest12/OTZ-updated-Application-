@@ -162,13 +162,33 @@ export async function addVisit(patientId: string, visit: any) {
     await setDoc(newDocRef, { ...visit, patientId, createdAt: Timestamp.now() });
     
     // Update patient's last visit date and status
+    const vlSuppressed = visit.vlResult !== undefined ? visit.vlResult < 50 : undefined;
     await updateDoc(doc(db, 'patients', patientId), {
       lastVisitDate: visit.date,
       nextAppointmentDate: visit.nextAppointmentDate || null,
-      vlSuppressed: visit.vlResult !== undefined ? visit.vlResult < 50 : undefined,
+      vlSuppressed,
       lastVlDate: visit.vlResult !== undefined ? visit.date : undefined,
       lastVlResult: visit.vlResult !== undefined ? visit.vlResult : undefined,
     });
+
+    // If VL is unsuppressed, create a counseling track
+    if (visit.vlResult !== undefined && visit.vlResult >= 50) {
+      const patientDoc = await getDoc(doc(db, 'patients', patientId));
+      const patientData = patientDoc.data();
+      if (patientData) {
+        await addCounselingTrack({
+          patientId,
+          patientName: `${patientData.firstName} ${patientData.lastName}`,
+          clinicNumber: patientData.clinicNumber,
+          startDate: visit.date,
+          vlResult: visit.vlResult,
+          session1: { status: 'Pending' },
+          session2: { status: 'Pending' },
+          session3: { status: 'Pending' },
+          completed: false,
+        });
+      }
+    }
 
     // Also create/update appointment if nextAppointmentDate is provided
     if (visit.nextAppointmentDate) {
@@ -218,6 +238,37 @@ export async function updateAppointmentStatus(id: string, status: string) {
   const path = `appointments/${id}`;
   try {
     await updateDoc(doc(db, 'appointments', id), { status, updatedAt: Timestamp.now() });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+// Counseling Tracks
+export function subscribeToCounselingTracks(callback: (tracks: any[]) => void) {
+  const path = 'counseling_tracks';
+  return onSnapshot(collection(db, path), (snapshot) => {
+    const tracks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    callback(tracks);
+  }, (error) => {
+    handleFirestoreError(error, OperationType.GET, path);
+  });
+}
+
+export async function addCounselingTrack(track: any) {
+  const path = 'counseling_tracks';
+  try {
+    const newDocRef = doc(collection(db, path));
+    await setDoc(newDocRef, { ...track, createdAt: Timestamp.now() });
+    return newDocRef.id;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+export async function updateCounselingTrack(id: string, track: any) {
+  const path = `counseling_tracks/${id}`;
+  try {
+    await updateDoc(doc(db, 'counseling_tracks', id), { ...track, updatedAt: Timestamp.now() });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }

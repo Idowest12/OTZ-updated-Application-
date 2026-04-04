@@ -14,10 +14,10 @@ import {
   Activity,
   AlertCircle,
 } from 'lucide-react';
-import { Patient, Visit } from '@/src/types';
+import { Patient, Visit, CounselingTrack } from '@/src/types';
 import { format, parseISO, subDays, isBefore } from 'date-fns';
 
-export function Reports({ patients, visits }: { patients: Patient[], visits: Visit[] }) {
+export function Reports({ patients, visits, tracks = [] }: { patients: Patient[], visits: Visit[], tracks?: CounselingTrack[] }) {
   const downloadCSV = (data: any[], filename: string) => {
     if (data.length === 0) return;
     
@@ -39,6 +39,58 @@ export function Reports({ patients, visits }: { patients: Patient[], visits: Vis
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const generateDetailedCounselingReport = () => {
+    const now = new Date();
+    const reportData = tracks.map(track => {
+      const patient = patients.find(p => p.id === track.patientId);
+      return {
+        ClinicNumber: track.clinicNumber,
+        PatientName: track.patientName,
+        VLResult: track.vlResult,
+        StartDate: track.startDate,
+        Session1_Status: track.session1.status,
+        Session1_Date: track.session1.date || 'N/A',
+        Session2_Status: track.session2.status,
+        Session2_Date: track.session2.date || 'N/A',
+        Session3_Status: track.session3.status,
+        Session3_Date: track.session3.date || 'N/A',
+        Completed: track.completed ? 'Yes' : 'No',
+        CompletionDate: track.completionDate || 'N/A'
+      };
+    });
+
+    downloadCSV(reportData, 'Detailed_Counseling_Tracker');
+  };
+
+  const generateMonthlyCounselingCompletionReport = () => {
+    const now = new Date();
+    const currentMonth = format(now, 'yyyy-MM');
+    
+    const completedThisMonth = tracks.filter(t => t.completed && t.completionDate?.startsWith(currentMonth));
+    const pendingThisMonth = tracks.filter(t => !t.completed);
+
+    const reportData = [
+      ...completedThisMonth.map(t => ({
+        Month: currentMonth,
+        Status: 'Completed',
+        ClinicNumber: t.clinicNumber,
+        Name: t.patientName,
+        CompletionDate: t.completionDate
+      })),
+      ...pendingThisMonth.map(t => ({
+        Month: currentMonth,
+        Status: 'Pending',
+        ClinicNumber: t.clinicNumber,
+        Name: t.patientName,
+        SessionsDone: (t.session1.status === 'Completed' ? 1 : 0) + 
+                      (t.session2.status === 'Completed' ? 1 : 0) + 
+                      (t.session3.status === 'Completed' ? 1 : 0)
+      }))
+    ];
+
+    downloadCSV(reportData, `Counseling_Monthly_Status_${currentMonth}`);
   };
 
   const generateMonthlyReport = () => {
@@ -195,6 +247,22 @@ export function Reports({ patients, visits }: { patients: Patient[], visits: Vis
   };
 
   const reports = [
+    {
+      title: 'Monthly Counseling Status',
+      description: 'Monthly summary of who completed or is still pending in their 3-session counseling cycle.',
+      icon: Calendar,
+      color: 'text-amber-600',
+      bg: 'bg-amber-50',
+      onDownload: generateMonthlyCounselingCompletionReport
+    },
+    {
+      title: 'Detailed Counseling Tracker',
+      description: 'Full history of all unsuppressed patients in the counseling cycle with session dates.',
+      icon: Activity,
+      color: 'text-emerald-600',
+      bg: 'bg-emerald-50',
+      onDownload: generateDetailedCounselingReport
+    },
     {
       title: 'Monthly Clinic Report',
       description: 'Comprehensive summary of visits, VL tests, and patient status for the current month.',

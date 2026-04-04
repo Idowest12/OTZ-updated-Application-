@@ -26,15 +26,16 @@ import {
   Cell,
 } from 'recharts';
 import { format, subMonths, startOfMonth, endOfMonth, isWithinInterval, parseISO } from 'date-fns';
-import { Patient, Visit } from '@/src/types';
+import { Patient, Visit, CounselingTrack } from '@/src/types';
 
 const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
-export function Dashboard({ patients, appointments, visits }: { patients: Patient[], appointments: any[], visits: Visit[] }) {
+export function Dashboard({ patients, appointments, visits, tracks = [] }: { patients: Patient[], appointments: any[], visits: Visit[], tracks?: CounselingTrack[] }) {
   const activePatients = patients.filter(p => p.ltfuStatus === 'Active').length;
   const ltfuPatients = patients.filter(p => p.ltfuStatus === 'LTFU').length;
   const suppressedPatients = patients.filter(p => p.vlSuppressed).length;
   const upcomingVisits = appointments.filter(a => a.status === 'Pending').length;
+  const pendingCounseling = tracks.filter(t => !t.completed).length;
 
   // Calculate monthly visits for the last 6 months
   const monthlyVisitsData = Array.from({ length: 6 }, (_, i) => {
@@ -83,6 +84,14 @@ export function Dashboard({ patients, appointments, visits }: { patients: Patien
       color: 'text-amber-600',
       bg: 'bg-amber-50',
       trend: 'Pending appointments',
+    },
+    {
+      label: 'High VL Counseling',
+      value: pendingCounseling.toString(),
+      icon: AlertCircle,
+      color: 'text-rose-600',
+      bg: 'bg-rose-50',
+      trend: 'Require counseling',
     },
   ];
 

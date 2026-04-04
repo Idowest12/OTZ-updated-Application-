@@ -9,12 +9,13 @@ import { Dashboard } from './components/Dashboard';
 import { PatientList } from './components/PatientList';
 import { AppointmentCalendar } from './components/AppointmentCalendar';
 import { Reports } from './components/Reports';
+import { ViralLoadManager } from './components/ViralLoadManager';
 import { Modal } from './components/ui/Modal';
 import { PatientForm } from './components/PatientForm';
 import { VisitForm } from './components/VisitForm';
 import { PatientDetails } from './components/PatientDetails';
 import { TransferForm } from './components/TransferForm';
-import { Patient, Visit } from './types';
+import { Patient, Visit, CounselingTrack } from './types';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from './contexts/AuthContext';
 import { Button } from './components/ui/Button';
@@ -28,7 +29,8 @@ import {
   addVisit, 
   subscribeToAppointments,
   updateAppointmentStatus,
-  subscribeToAllVisits
+  subscribeToAllVisits,
+  subscribeToCounselingTracks
 } from './services/firestoreService';
 
 export default function App() {
@@ -43,6 +45,7 @@ export default function App() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [appointments, setAppointments] = useState<any[]>([]);
   const [visits, setVisits] = useState<Visit[]>([]);
+  const [counselingTracks, setCounselingTracks] = useState<CounselingTrack[]>([]);
 
   useEffect(() => {
     if (user) {
@@ -55,10 +58,14 @@ export default function App() {
       const unsubscribeVisits = subscribeToAllVisits((data) => {
         setVisits(data as Visit[]);
       });
+      const unsubscribeCounseling = subscribeToCounselingTracks((data) => {
+        setCounselingTracks(data as CounselingTrack[]);
+      });
       return () => {
         unsubscribePatients();
         unsubscribeAppointments();
         unsubscribeVisits();
+        unsubscribeCounseling();
       };
     }
   }, [user]);
@@ -204,7 +211,7 @@ export default function App() {
   const renderView = () => {
     switch (currentView) {
       case 'dashboard':
-        return <Dashboard patients={patients} appointments={appointments} visits={visits} />;
+        return <Dashboard patients={patients} appointments={appointments} visits={visits} tracks={counselingTracks} />;
       case 'patients':
         return (
           <PatientList
@@ -221,8 +228,16 @@ export default function App() {
         );
       case 'appointments':
         return <AppointmentCalendar appointments={appointments} onUpdateStatus={updateAppointmentStatus} />;
+      case 'viral-load':
+        return (
+          <ViralLoadManager 
+            patients={patients} 
+            tracks={counselingTracks} 
+            onRecordVl={handleRecordVisit} 
+          />
+        );
       case 'reports':
-        return <Reports patients={patients} visits={visits} />;
+        return <Reports patients={patients} visits={visits} tracks={counselingTracks} />;
       default:
         return (
           <div className="flex h-[60vh] items-center justify-center">

@@ -14,10 +14,11 @@ import {
   Activity,
   ChevronLeft,
   ChevronRight,
+  TestTube,
 } from 'lucide-react';
 import { useState } from 'react';
 
-export type View = 'dashboard' | 'patients' | 'appointments' | 'reports' | 'settings';
+export type View = 'dashboard' | 'patients' | 'appointments' | 'viral-load' | 'reports' | 'settings';
 
 interface SidebarProps {
   currentView: View;
@@ -32,6 +33,7 @@ export function Sidebar({ currentView, onViewChange, onLogout }: SidebarProps) {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'patients', label: 'Patients', icon: Users },
     { id: 'appointments', label: 'Appointments', icon: Calendar },
+    { id: 'viral-load', label: 'Viral Load', icon: TestTube },
     { id: 'reports', label: 'Reports', icon: FileText },
     { id: 'settings', label: 'Settings', icon: Settings },
   ] as const;

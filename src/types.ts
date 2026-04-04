@@ -44,6 +44,26 @@ export interface Appointment {
   status: 'Pending' | 'Completed' | 'Missed';
 }
 
+export interface CounselingSession {
+  date?: string;
+  status: 'Pending' | 'Completed';
+  notes?: string;
+}
+
+export interface CounselingTrack {
+  id?: string;
+  patientId: string;
+  patientName: string;
+  clinicNumber: string;
+  startDate: string;
+  vlResult: number;
+  session1: CounselingSession; // 1st Online
+  session2: CounselingSession; // 2nd Online
+  session3: CounselingSession; // Final Clinic (at next visit)
+  completed: boolean;
+  completionDate?: string;
+}
+
 export interface DashboardStats {
   totalPatients: number;
   activePatients: number;
