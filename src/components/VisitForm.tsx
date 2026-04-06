@@ -23,6 +23,7 @@ export function VisitForm({ patient, initialType, onSubmit, onCancel }: VisitFor
     notes: '',
     vlResult: undefined,
     nextAppointmentDate: '',
+    nextCounselingDate: '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -110,6 +111,21 @@ export function VisitForm({ patient, initialType, onSubmit, onCancel }: VisitFor
           placeholder="e.g. 50"
         />
       </div>
+
+      {(formData.type === 'Counselling' || (formData.vlResult && formData.vlResult >= 50)) && (
+        <div className="rounded-xl border-2 border-amber-100 bg-amber-50 p-4">
+          <Input
+            label="Next Counseling Appointment"
+            type="date"
+            value={formData.nextCounselingDate}
+            onChange={(e) => setFormData({ ...formData, nextCounselingDate: e.target.value })}
+            className="border-amber-200 focus:ring-amber-500"
+          />
+          <p className="mt-1 text-[10px] text-amber-600 font-medium uppercase tracking-wider">
+            Separate date for online or clinic counseling
+          </p>
+        </div>
+      )}
 
       <div className="space-y-1.5">
         <label className="text-sm font-medium text-slate-700">Clinical Notes</label>

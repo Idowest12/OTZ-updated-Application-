@@ -110,9 +110,19 @@ export function AppointmentCalendar({ appointments, onUpdateStatus }: Appointmen
                       </span>
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-slate-900">
-                        {appointment.patientName}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-slate-900">
+                          {appointment.patientName}
+                        </p>
+                        {appointment.type && (
+                          <span className={cn(
+                            "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                            appointment.type === 'Counseling' ? "bg-amber-100 text-amber-700" : "bg-indigo-100 text-indigo-700"
+                          )}>
+                            {appointment.type}
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-2 text-xs text-slate-500">
                         <span>Clinic No: {appointment.clinicNumber}</span>
                         {appointment.phone && (

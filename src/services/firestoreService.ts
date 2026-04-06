@@ -163,34 +163,70 @@ export async function addVisit(patientId: string, visit: any) {
     
     // Update patient's last visit date and status
     const vlSuppressed = visit.vlResult !== undefined ? visit.vlResult < 50 : undefined;
-    await updateDoc(doc(db, 'patients', patientId), {
+    const patientUpdate: any = {
       lastVisitDate: visit.date,
       nextAppointmentDate: visit.nextAppointmentDate || null,
       vlSuppressed,
       lastVlDate: visit.vlResult !== undefined ? visit.date : undefined,
       lastVlResult: visit.vlResult !== undefined ? visit.vlResult : undefined,
-    });
+    };
+    if (visit.nextCounselingDate) {
+      patientUpdate.nextCounselingDate = visit.nextCounselingDate;
+    }
+    await updateDoc(doc(db, 'patients', patientId), patientUpdate);
 
-    // If VL is unsuppressed, create a counseling track
+    // If VL is unsuppressed, create or update a counseling track
     if (visit.vlResult !== undefined && visit.vlResult >= 50) {
       const patientDoc = await getDoc(doc(db, 'patients', patientId));
       const patientData = patientDoc.data();
       if (patientData) {
-        await addCounselingTrack({
-          patientId,
-          patientName: `${patientData.firstName} ${patientData.lastName}`,
-          clinicNumber: patientData.clinicNumber,
-          startDate: visit.date,
-          vlResult: visit.vlResult,
-          session1: { status: 'Pending' },
-          session2: { status: 'Pending' },
-          session3: { status: 'Pending' },
-          completed: false,
+        // Check if there's an active track
+        const tracksQuery = query(
+          collection(db, 'counseling_tracks'), 
+          where('patientId', '==', patientId),
+          where('completed', '==', false)
+        );
+        const tracksSnapshot = await getDocs(tracksQuery);
+        
+        if (tracksSnapshot.empty) {
+          await addCounselingTrack({
+            patientId,
+            patientName: `${patientData.firstName} ${patientData.lastName}`,
+            clinicNumber: patientData.clinicNumber,
+            startDate: visit.date,
+            vlResult: visit.vlResult,
+            session1: { status: 'Pending' },
+            session2: { status: 'Pending' },
+            session3: { status: 'Pending' },
+            completed: false,
+            nextCounselingDate: visit.nextCounselingDate || null,
+          });
+        } else {
+          // Update existing track with new VL and next counseling date
+          const trackId = tracksSnapshot.docs[0].id;
+          await updateCounselingTrack(trackId, {
+            vlResult: visit.vlResult,
+            nextCounselingDate: visit.nextCounselingDate || null,
+          });
+        }
+      }
+    } else if (visit.type === 'Counselling') {
+      // If it's a counseling visit, update the active track's next date
+      const tracksQuery = query(
+        collection(db, 'counseling_tracks'), 
+        where('patientId', '==', patientId),
+        where('completed', '==', false)
+      );
+      const tracksSnapshot = await getDocs(tracksQuery);
+      if (!tracksSnapshot.empty) {
+        const trackId = tracksSnapshot.docs[0].id;
+        await updateCounselingTrack(trackId, {
+          nextCounselingDate: visit.nextCounselingDate || null,
         });
       }
     }
 
-    // Also create/update appointment if nextAppointmentDate is provided
+    // Create/update appointment if nextAppointmentDate is provided
     if (visit.nextAppointmentDate) {
       const patientDoc = await getDoc(doc(db, 'patients', patientId));
       const patientData = patientDoc.data();
@@ -201,6 +237,24 @@ export async function addVisit(patientId: string, visit: any) {
           clinicNumber: patientData.clinicNumber,
           phone: patientData.phone || '',
           date: visit.nextAppointmentDate,
+          type: 'Clinic Visit',
+          status: 'Pending'
+        });
+      }
+    }
+
+    // Create separate appointment for counseling if nextCounselingDate is provided
+    if (visit.nextCounselingDate) {
+      const patientDoc = await getDoc(doc(db, 'patients', patientId));
+      const patientData = patientDoc.data();
+      if (patientData) {
+        await addAppointment({
+          patientId,
+          patientName: `${patientData.firstName} ${patientData.lastName}`,
+          clinicNumber: patientData.clinicNumber,
+          phone: patientData.phone || '',
+          date: visit.nextCounselingDate,
+          type: 'Counseling',
           status: 'Pending'
         });
       }

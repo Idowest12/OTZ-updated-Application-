@@ -32,6 +32,7 @@ export interface Visit {
   notes?: string;
   vlResult?: number;
   nextAppointmentDate?: string;
+  nextCounselingDate?: string;
 }
 
 export interface Appointment {
@@ -41,6 +42,7 @@ export interface Appointment {
   clinicNumber: string;
   phone?: string;
   date: string;
+  type?: 'Clinic Visit' | 'Counseling';
   status: 'Pending' | 'Completed' | 'Missed';
 }
 
@@ -62,6 +64,7 @@ export interface CounselingTrack {
   session3: CounselingSession; // Final Clinic (at next visit)
   completed: boolean;
   completionDate?: string;
+  nextCounselingDate?: string;
 }
 
 export interface DashboardStats {

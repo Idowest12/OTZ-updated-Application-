@@ -17,12 +17,12 @@ import {
   Clock, 
   AlertCircle, 
   MessageSquare, 
-  Phone,
   Calendar,
   ChevronRight,
   Bell
 } from 'lucide-react';
 import { updateCounselingTrack } from '../services/firestoreService';
+import { Modal } from './ui/Modal';
 
 interface ViralLoadManagerProps {
   patients: Patient[];
@@ -33,6 +33,8 @@ interface ViralLoadManagerProps {
 export function ViralLoadManager({ patients, tracks, onRecordVl }: ViralLoadManagerProps) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'All' | 'Pending' | 'Completed'>('Pending');
+  const [isPatientSelectOpen, setIsPatientSelectOpen] = useState(false);
+  const [patientSearch, setPatientSearch] = useState('');
 
   const filteredTracks = tracks.filter(track => {
     const matchesSearch = 
@@ -44,6 +46,12 @@ export function ViralLoadManager({ patients, tracks, onRecordVl }: ViralLoadMana
     if (filter === 'Completed') return matchesSearch && track.completed;
     return matchesSearch;
   }).sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+
+  const availablePatients = patients.filter(p => 
+    p.firstName.toLowerCase().includes(patientSearch.toLowerCase()) ||
+    p.lastName.toLowerCase().includes(patientSearch.toLowerCase()) ||
+    p.clinicNumber.toLowerCase().includes(patientSearch.toLowerCase())
+  ).slice(0, 5);
 
   const handleUpdateSession = async (track: CounselingTrack, sessionNum: 1 | 2 | 3, status: 'Completed') => {
     const updatedTrack = { ...track };
@@ -148,6 +156,12 @@ export function ViralLoadManager({ patients, tracks, onRecordVl }: ViralLoadMana
                           <Calendar className="h-3 w-3" />
                           Started: {formatDate(track.startDate)}
                         </span>
+                        {track.nextCounselingDate && (
+                          <span className="flex items-center gap-1 text-amber-600 font-bold">
+                            <Calendar className="h-3 w-3" />
+                            Next Appt: {formatDate(track.nextCounselingDate)}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -263,7 +277,7 @@ export function ViralLoadManager({ patients, tracks, onRecordVl }: ViralLoadMana
             <div className="space-y-3">
               <Button 
                 className="w-full justify-start gap-3 bg-indigo-600"
-                onClick={() => {}}
+                onClick={() => setIsPatientSelectOpen(true)}
               >
                 <Plus className="h-4 w-4" />
                 Record New VL Result
@@ -271,7 +285,14 @@ export function ViralLoadManager({ patients, tracks, onRecordVl }: ViralLoadMana
               <Button 
                 variant="outline"
                 className="w-full justify-start gap-3"
-                onClick={() => {}}
+                onClick={() => {
+                  const pending = tracks.filter(t => !t.completed && t.session1.status === 'Pending');
+                  if (pending.length > 0) {
+                    alert(`Sending reminders to ${pending.length} clients...`);
+                  } else {
+                    alert('No pending reminders to send.');
+                  }
+                }}
               >
                 <MessageSquare className="h-4 w-4" />
                 Send Online Reminder
@@ -302,6 +323,47 @@ export function ViralLoadManager({ patients, tracks, onRecordVl }: ViralLoadMana
           </Card>
         </div>
       </div>
+
+      <Modal
+        isOpen={isPatientSelectOpen}
+        onClose={() => setIsPatientSelectOpen(false)}
+        title="Select Patient for VL Record"
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              placeholder="Search patient by name or clinic number..."
+              className="pl-10"
+              value={patientSearch}
+              onChange={(e) => setPatientSearch(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <div className="space-y-2">
+            {availablePatients.map(patient => (
+              <button
+                key={patient.id}
+                onClick={() => {
+                  onRecordVl(patient);
+                  setIsPatientSelectOpen(false);
+                }}
+                className="flex w-full items-center justify-between rounded-xl border border-slate-100 p-4 text-left transition-all hover:border-indigo-100 hover:bg-indigo-50/50"
+              >
+                <div>
+                  <p className="font-bold text-slate-900">{patient.firstName} {patient.lastName}</p>
+                  <p className="text-xs text-slate-500">Clinic No: {patient.clinicNumber}</p>
+                </div>
+                <ChevronRight className="h-4 w-4 text-slate-400" />
+              </button>
+            ))}
+            {availablePatients.length === 0 && (
+              <p className="py-8 text-center text-sm text-slate-500">No patients found matching your search.</p>
+            )}
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

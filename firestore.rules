@@ -43,6 +43,21 @@ service cloud.firestore {
     //   - date: string (required, date format)
     //   - status: string (required, 'Pending' | 'Completed' | 'Missed')
     //
+    // Collection: counseling_tracks
+    // Document ID: {trackId}
+    // Fields:
+    //   - patientId: string (required)
+    //   - patientName: string (required)
+    //   - clinicNumber: string (required)
+    //   - startDate: string (required, date format)
+    //   - vlResult: number (required)
+    //   - session1: map (required, status: string, date: string, notes: string)
+    //   - session2: map (required, status: string, date: string, notes: string)
+    //   - session3: map (required, status: string, date: string, notes: string)
+    //   - completed: boolean (required)
+    //   - completionDate: string (optional, date format)
+    //   - nextCounselingDate: string (optional, date format)
+    //
     // ===============================================================
 
     // ===============================================================
@@ -95,6 +110,7 @@ service cloud.firestore {
         isValidOptionalDate(data, 'dateOfBirth') &&
         isValidOptionalDate(data, 'lastVisitDate') &&
         isValidOptionalDate(data, 'nextAppointmentDate') &&
+        isValidOptionalDate(data, 'nextCounselingDate') &&
         isValidOptionalDate(data, 'lastVlDate');
     }
 
@@ -102,8 +118,9 @@ service cloud.firestore {
       return hasRequiredFields(['patientId', 'date', 'type']) &&
         data.patientId is string &&
         isValidDateString(data.date) &&
-        data.type in ['Drug Pickup & VL Test', 'Drug Pickup (Proxy)', 'Clinical Review', 'Counselling', 'Other'] &&
-        isValidOptionalDate(data, 'nextAppointmentDate');
+        data.type in ['Drug Pickup & VL Test', 'Drug Pickup (Proxy)', 'Clinical Review', 'Counselling', 'Other', 'Transfer Out', 'Reactivation'] &&
+        isValidOptionalDate(data, 'nextAppointmentDate') &&
+        isValidOptionalDate(data, 'nextCounselingDate');
     }
 
     function isValidAppointment(data) {
@@ -112,7 +129,21 @@ service cloud.firestore {
         data.patientName is string &&
         data.clinicNumber is string &&
         isValidDateString(data.date) &&
-        data.status in ['Pending', 'Completed', 'Missed'];
+        data.status in ['Pending', 'Completed', 'Missed'] &&
+        (!('type' in data) || data.type in ['Clinic Visit', 'Counseling']);
+    }
+
+    function isValidCounselingTrack(data) {
+      return hasRequiredFields(['patientId', 'patientName', 'clinicNumber', 'startDate', 'vlResult', 'session1', 'session2', 'session3', 'completed']) &&
+        data.patientId is string &&
+        data.patientName is string &&
+        data.clinicNumber is string &&
+        isValidDateString(data.startDate) &&
+        data.vlResult is number &&
+        data.session1 is map && data.session2 is map && data.session3 is map &&
+        data.completed is bool &&
+        isValidOptionalDate(data, 'completionDate') &&
+        isValidOptionalDate(data, 'nextCounselingDate');
     }
 
     // ===============================================================
@@ -149,6 +180,13 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidAppointment(request.resource.data);
       allow update: if isAuthenticated() && isValidAppointment(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /counseling_tracks/{trackId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidCounselingTrack(request.resource.data);
+      allow update: if isAuthenticated() && isValidCounselingTrack(request.resource.data);
       allow delete: if isAdmin();
     }
 
