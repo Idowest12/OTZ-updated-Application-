@@ -317,10 +317,10 @@ export function Reports({ patients, visits, tracks = [] }: { patients: Patient[]
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
             Reports & Exports
           </h1>
-          <p className="text-slate-500">
+          <p className="text-slate-500 dark:text-slate-400">
             Generate and export clinic data for analysis and reporting.
           </p>
         </div>
@@ -332,24 +332,24 @@ export function Reports({ patients, visits, tracks = [] }: { patients: Patient[]
           return (
             <Card key={report.title} className="group transition-all hover:shadow-md">
               <div className="flex items-start gap-4">
-                <div className={cn('rounded-xl p-3', report.bg)}>
+                <div className={cn('rounded-xl p-3', report.bg, 'dark:bg-opacity-20')}>
                   <Icon className={cn('h-6 w-6', report.color)} />
                 </div>
                 <div className="flex-1 space-y-1">
-                  <h3 className="font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">
+                  <h3 className="font-semibold text-slate-900 dark:text-white group-hover:text-indigo-600 transition-colors">
                     {report.title}
                   </h3>
-                  <p className="text-sm text-slate-500">
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
                     {report.description}
                   </p>
                 </div>
               </div>
-              <div className="mt-6 flex items-center justify-between border-t border-slate-50 pt-4">
-                <span className="text-xs text-slate-400">Real-time data</span>
+              <div className="mt-6 flex items-center justify-between border-t border-slate-50 dark:border-slate-800 pt-4">
+                <span className="text-xs text-slate-400 dark:text-slate-500">Real-time data</span>
                 <Button 
                   variant="ghost" 
                   size="sm" 
-                  className="gap-2 text-indigo-600"
+                  className="gap-2 text-indigo-600 dark:text-indigo-400 dark:hover:bg-indigo-900/20"
                   onClick={report.onDownload}
                 >
                   <Download className="h-4 w-4" />
@@ -363,8 +363,8 @@ export function Reports({ patients, visits, tracks = [] }: { patients: Patient[]
 
       <Card>
         <div className="mb-6">
-          <h3 className="font-semibold text-slate-900">Custom Export</h3>
-          <p className="text-sm text-slate-500">Select specific data fields to export to CSV.</p>
+          <h3 className="font-semibold text-slate-900 dark:text-white">Custom Export</h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Select specific data fields to export to CSV.</p>
         </div>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
           {[
@@ -377,9 +377,9 @@ export function Reports({ patients, visits, tracks = [] }: { patients: Patient[]
             'Clinical Notes',
             'Counseling Records',
           ].map((field) => (
-            <label key={field} className="flex items-center gap-2 rounded-lg border border-slate-100 p-3 transition-colors hover:bg-slate-50 cursor-pointer">
-              <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
-              <span className="text-xs font-medium text-slate-700">{field}</span>
+            <label key={field} className="flex items-center gap-2 rounded-lg border border-slate-100 dark:border-slate-800 p-3 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer">
+              <input type="checkbox" className="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-indigo-600 focus:ring-indigo-500" />
+              <span className="text-xs font-medium text-slate-700 dark:text-slate-300">{field}</span>
             </label>
           ))}
         </div>
