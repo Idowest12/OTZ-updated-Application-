@@ -33,12 +33,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     const root = window.document.documentElement;
     if (theme === 'dark') {
       root.classList.add('dark');
-      root.style.backgroundColor = '#000000';
-      root.style.color = '#ffffff';
     } else {
       root.classList.remove('dark');
-      root.style.backgroundColor = '#f8fafc';
-      root.style.color = '#0f172a';
     }
   }, [theme]);
 

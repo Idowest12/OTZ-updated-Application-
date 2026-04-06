@@ -103,6 +103,14 @@ export function Sidebar({ currentView, onViewChange, onLogout }: SidebarProps) {
           <LogOut className="h-5 w-5 shrink-0 text-slate-400 group-hover:text-rose-500" />
           {!isCollapsed && <span>Logout</span>}
         </button>
+
+        {!isCollapsed && (
+          <div className="mt-4 px-3 text-center">
+            <p className="text-[10px] text-slate-400 dark:text-slate-500">
+              © {new Date().getFullYear()} Tizzitech Team
+            </p>
+          </div>
+        )}
       </div>
 
       <button

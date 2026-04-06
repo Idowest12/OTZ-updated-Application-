@@ -134,12 +134,18 @@ export function Settings() {
                 <span className="font-medium text-slate-900 dark:text-white">April 6, 2026</span>
               </div>
               <div className="flex justify-between py-2">
-                <span className="text-slate-500 dark:text-slate-400">Environment</span>
-                <span className="font-medium text-slate-900 dark:text-white uppercase tracking-wider">Production</span>
+                <span className="text-slate-500 dark:text-slate-400">Designed by</span>
+                <span className="font-medium text-slate-900 dark:text-white uppercase tracking-wider">Tizzitech Team</span>
               </div>
             </div>
           </Card>
         </section>
+
+        <div className="text-center pt-8 border-t border-slate-100 dark:border-slate-800">
+          <p className="text-sm text-slate-400 dark:text-slate-500">
+            © {new Date().getFullYear()} OTZ Clinic Management System. All rights reserved.
+          </p>
+        </div>
       </div>
     </div>
   );
