@@ -18,6 +18,7 @@ import {
   Timestamp,
   getDocFromServer,
   writeBatch,
+  limit,
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { Patient, ActivityLog } from '../types';
@@ -43,13 +44,34 @@ async function logActivity(action: string, details: string, type: ActivityLog['t
 
 export function subscribeToActivityLogs(callback: (logs: ActivityLog[]) => void) {
   const path = 'activity_logs';
-  const q = query(collection(db, path), orderBy('timestamp', 'desc'));
+  const q = query(collection(db, path), orderBy('timestamp', 'desc'), limit(100));
   return onSnapshot(q, (snapshot) => {
     const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityLog));
     callback(logs);
   }, (error) => {
     handleFirestoreError(error, OperationType.GET, path);
   });
+}
+
+export async function cleanupOldLogs(days: number = 30) {
+  const path = 'activity_logs';
+  try {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const q = query(collection(db, path), where('timestamp', '<', Timestamp.fromDate(cutoff)));
+    const snapshot = await getDocs(q);
+    
+    const batch = writeBatch(db);
+    snapshot.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+    
+    await batch.commit();
+    await logActivity('System Cleanup', `Deleted ${snapshot.size} logs older than ${days} days.`, 'System');
+    return snapshot.size;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
 }
 
 export enum OperationType {

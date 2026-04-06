@@ -11,6 +11,7 @@ import { AppointmentCalendar } from './components/AppointmentCalendar';
 import { Reports } from './components/Reports';
 import { ViralLoadManager } from './components/ViralLoadManager';
 import { AdminPanel } from './components/AdminPanel';
+import { Settings } from './components/Settings';
 import { Modal } from './components/ui/Modal';
 import { PatientForm } from './components/PatientForm';
 import { VisitForm } from './components/VisitForm';
@@ -241,6 +242,8 @@ export default function App() {
         return <Reports patients={patients} visits={visits} tracks={counselingTracks} />;
       case 'admin':
         return <AdminPanel />;
+      case 'settings':
+        return <Settings />;
       default:
         return (
           <div className="flex h-[60vh] items-center justify-center">

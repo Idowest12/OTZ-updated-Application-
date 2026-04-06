@@ -57,40 +57,40 @@ export function Dashboard({ patients, appointments, visits, tracks = [] }: { pat
       label: 'Total Patients',
       value: patients.length.toString(),
       icon: Users,
-      color: 'text-indigo-600',
-      bg: 'bg-indigo-50',
+      color: 'text-indigo-600 dark:text-indigo-400',
+      bg: 'bg-indigo-50 dark:bg-indigo-900/20',
       trend: 'Total registered',
     },
     {
       label: 'Active on ART',
       value: activePatients.toString(),
       icon: Activity,
-      color: 'text-emerald-600',
-      bg: 'bg-emerald-50',
+      color: 'text-emerald-600 dark:text-emerald-400',
+      bg: 'bg-emerald-50 dark:bg-emerald-900/20',
       trend: `${((activePatients / (patients.length || 1)) * 100).toFixed(1)}% retention`,
     },
     {
       label: 'LTFU Patients',
       value: ltfuPatients.toString(),
       icon: AlertCircle,
-      color: 'text-rose-600',
-      bg: 'bg-rose-50',
+      color: 'text-rose-600 dark:text-rose-400',
+      bg: 'bg-rose-50 dark:bg-rose-900/20',
       trend: 'Require follow-up',
     },
     {
       label: 'Upcoming Visits',
       value: upcomingVisits.toString(),
       icon: Calendar,
-      color: 'text-amber-600',
-      bg: 'bg-amber-50',
+      color: 'text-amber-600 dark:text-amber-400',
+      bg: 'bg-amber-50 dark:bg-amber-900/20',
       trend: 'Pending appointments',
     },
     {
       label: 'High VL Counseling',
       value: pendingCounseling.toString(),
       icon: AlertCircle,
-      color: 'text-rose-600',
-      bg: 'bg-rose-50',
+      color: 'text-rose-600 dark:text-rose-400',
+      bg: 'bg-rose-50 dark:bg-rose-900/20',
       trend: 'Require counseling',
     },
   ];
@@ -109,10 +109,10 @@ export function Dashboard({ patients, appointments, visits, tracks = [] }: { pat
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
           Clinic Dashboard
         </h1>
-        <p className="text-slate-500">
+        <p className="text-slate-500 dark:text-slate-400">
           Overview of clinic performance and patient tracking.
         </p>
       </div>
@@ -127,15 +127,15 @@ export function Dashboard({ patients, appointments, visits, tracks = [] }: { pat
                   <Icon className={cn('h-6 w-6', stat.color)} />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-slate-500">
+                  <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
                     {stat.label}
                   </p>
-                  <h3 className="text-2xl font-bold text-slate-900">
+                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
                     {stat.value}
                   </h3>
                 </div>
               </div>
-              <div className="mt-4 flex items-center gap-1 text-xs font-medium text-slate-400">
+              <div className="mt-4 flex items-center gap-1 text-xs font-medium text-slate-400 dark:text-slate-500">
                 <TrendingUp className="h-3 w-3" />
                 <span>{stat.trend}</span>
               </div>
@@ -147,8 +147,8 @@ export function Dashboard({ patients, appointments, visits, tracks = [] }: { pat
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <div className="mb-6 flex items-center justify-between">
-            <h3 className="font-semibold text-slate-900">Monthly Visits</h3>
-            <select className="rounded-lg border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <h3 className="font-semibold text-slate-900 dark:text-white">Monthly Visits</h3>
+            <select className="rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs font-medium text-slate-600 dark:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500">
               <option>Last 6 months</option>
               <option>Last year</option>
             </select>
@@ -190,8 +190,8 @@ export function Dashboard({ patients, appointments, visits, tracks = [] }: { pat
 
         <Card>
           <div className="mb-6">
-            <h3 className="font-semibold text-slate-900">Viral Load Suppression</h3>
-            <p className="text-xs text-slate-500">Current suppression status across active patients</p>
+            <h3 className="font-semibold text-slate-900 dark:text-white">Viral Load Suppression</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Current suppression status across active patients</p>
           </div>
           <div className="flex h-[300px] items-center justify-center">
             <ResponsiveContainer width="100%" height="100%">
@@ -226,10 +226,10 @@ export function Dashboard({ patients, appointments, visits, tracks = [] }: { pat
                     style={{ backgroundColor: COLORS[index % COLORS.length] }}
                   />
                   <div className="flex flex-col">
-                    <span className="text-xs font-medium text-slate-900">
+                    <span className="text-xs font-medium text-slate-900 dark:text-white">
                       {item.name}
                     </span>
-                    <span className="text-xs text-slate-500">{item.value}%</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">{item.value}%</span>
                   </div>
                 </div>
               ))}
@@ -241,7 +241,7 @@ export function Dashboard({ patients, appointments, visits, tracks = [] }: { pat
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <div className="mb-6 flex items-center justify-between">
-            <h3 className="font-semibold text-slate-900">Recent Activity</h3>
+            <h3 className="font-semibold text-slate-900 dark:text-white">Recent Activity</h3>
             <button className="text-xs font-medium text-indigo-600 hover:text-indigo-700">
               View All
             </button>
@@ -252,22 +252,22 @@ export function Dashboard({ patients, appointments, visits, tracks = [] }: { pat
                 const patient = patients.find(p => p.id === visit.patientId);
                 return (
                   <div key={visit.id} className="flex items-start gap-4">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-50">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-50 dark:bg-slate-800">
                       <CheckCircle2 className="h-5 w-5 text-emerald-500" />
                     </div>
                     <div className="flex-1 space-y-1">
-                      <p className="text-sm font-medium text-slate-900">
-                        Visit recorded for patient <span className="text-indigo-600">{patient ? `${patient.firstName} ${patient.lastName}` : 'Unknown'}</span>
+                      <p className="text-sm font-medium text-slate-900 dark:text-white">
+                        Visit recorded for patient <span className="text-indigo-600 dark:text-indigo-400">{patient ? `${patient.firstName} ${patient.lastName}` : 'Unknown'}</span>
                       </p>
-                      <p className="text-xs text-slate-500">{visit.type} • {format(parseISO(visit.date), 'MMM d, yyyy')}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{visit.type} • {format(parseISO(visit.date), 'MMM d, yyyy')}</p>
                     </div>
-                    <span className="text-xs text-slate-400">{format(parseISO(visit.date), 'MMM d')}</span>
+                    <span className="text-xs text-slate-400 dark:text-slate-500">{format(parseISO(visit.date), 'MMM d')}</span>
                   </div>
                 );
               })
             ) : (
               <div className="flex flex-col items-center justify-center py-8 text-center">
-                <p className="text-sm text-slate-500">No recent activity recorded.</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">No recent activity recorded.</p>
               </div>
             )}
           </div>
@@ -275,34 +275,34 @@ export function Dashboard({ patients, appointments, visits, tracks = [] }: { pat
 
         <Card>
           <div className="mb-6">
-            <h3 className="font-semibold text-slate-900">Quick Actions</h3>
+            <h3 className="font-semibold text-slate-900 dark:text-white">Quick Actions</h3>
           </div>
           <div className="grid grid-cols-1 gap-3">
-            <button className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 p-4 text-left transition-colors hover:bg-slate-100">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white shadow-sm">
+            <button className="flex items-center gap-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-4 text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-800">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white dark:bg-slate-900 shadow-sm">
                 <Users className="h-5 w-5 text-indigo-600" />
               </div>
               <div>
-                <p className="text-sm font-semibold text-slate-900">Register Patient</p>
-                <p className="text-xs text-slate-500">Add a new client to the system</p>
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">Register Patient</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Add a new client to the system</p>
               </div>
             </button>
-            <button className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 p-4 text-left transition-colors hover:bg-slate-100">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white shadow-sm">
+            <button className="flex items-center gap-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-4 text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-800">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white dark:bg-slate-900 shadow-sm">
                 <Activity className="h-5 w-5 text-emerald-600" />
               </div>
               <div>
-                <p className="text-sm font-semibold text-slate-900">Record Visit</p>
-                <p className="text-xs text-slate-500">Log a clinic visit or drug pickup</p>
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">Record Visit</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Log a clinic visit or drug pickup</p>
               </div>
             </button>
-            <button className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 p-4 text-left transition-colors hover:bg-slate-100">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white shadow-sm">
+            <button className="flex items-center gap-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-4 text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-800">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white dark:bg-slate-900 shadow-sm">
                 <FileText className="h-5 w-5 text-amber-600" />
               </div>
               <div>
-                <p className="text-sm font-semibold text-slate-900">Generate Report</p>
-                <p className="text-xs text-slate-500">Export monthly clinic statistics</p>
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">Generate Report</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Export monthly clinic statistics</p>
               </div>
             </button>
           </div>

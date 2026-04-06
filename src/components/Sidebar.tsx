@@ -45,7 +45,7 @@ export function Sidebar({ currentView, onViewChange, onLogout }: SidebarProps) {
   return (
     <aside
       className={cn(
-        'relative flex flex-col border-r border-slate-100 bg-white transition-all duration-300 ease-in-out',
+        'relative flex flex-col border-r border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 transition-all duration-300 ease-in-out',
         isCollapsed ? 'w-20' : 'w-64'
       )}
     >
@@ -55,7 +55,7 @@ export function Sidebar({ currentView, onViewChange, onLogout }: SidebarProps) {
             <Activity className="h-5 w-5" />
           </div>
           {!isCollapsed && (
-            <span className="text-lg font-bold tracking-tight text-slate-900">
+            <span className="text-lg font-bold tracking-tight text-slate-900 dark:text-white">
               OTZ Clinic
             </span>
           )}
@@ -74,8 +74,8 @@ export function Sidebar({ currentView, onViewChange, onLogout }: SidebarProps) {
               className={cn(
                 'group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200',
                 isActive
-                  ? 'bg-indigo-50 text-indigo-600'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
               )}
             >
               <Icon
@@ -93,11 +93,11 @@ export function Sidebar({ currentView, onViewChange, onLogout }: SidebarProps) {
         })}
       </nav>
 
-      <div className="border-t border-slate-100 p-3">
+      <div className="border-t border-slate-100 dark:border-slate-800 p-3">
         <button
           onClick={onLogout}
           className={cn(
-            'group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition-all duration-200 hover:bg-rose-50 hover:text-rose-600'
+            'group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-400 transition-all duration-200 hover:bg-rose-50 dark:hover:bg-rose-900/20 hover:text-rose-600'
           )}
         >
           <LogOut className="h-5 w-5 shrink-0 text-slate-400 group-hover:text-rose-500" />
