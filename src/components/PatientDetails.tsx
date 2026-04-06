@@ -9,6 +9,7 @@ import { formatDate, cn } from '../utils';
 import { Card } from './ui/Card';
 import { Button } from './ui/Button';
 import { subscribeToVisits } from '../services/firestoreService';
+import { useAuth } from '../contexts/AuthContext';
 import { 
   User, 
   Calendar, 
@@ -33,6 +34,7 @@ interface PatientDetailsProps {
 }
 
 export function PatientDetails({ patient, onClose, onEdit, onRecordVisit, onTransferOut, onActivate }: PatientDetailsProps) {
+  const { isAdmin } = useAuth();
   const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -43,6 +45,15 @@ export function PatientDetails({ patient, onClose, onEdit, onRecordVisit, onTran
     });
     return () => unsubscribe();
   }, [patient.id]);
+
+  const isEditable = (createdAt?: any) => {
+    if (isAdmin) return true;
+    if (!createdAt) return true; 
+    const createdDate = createdAt.toDate ? createdAt.toDate() : new Date(createdAt);
+    const now = new Date();
+    const diffInHours = (now.getTime() - createdDate.getTime()) / (1000 * 60 * 60);
+    return diffInHours <= 48;
+  };
 
   const isAboutToGraduate = patient.age >= 24;
 
@@ -66,7 +77,13 @@ export function PatientDetails({ patient, onClose, onEdit, onRecordVisit, onTran
               </div>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => onEdit(patient)}>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => onEdit(patient)}
+                disabled={!isEditable(patient.createdAt)}
+                title={isEditable(patient.createdAt) ? "Edit Profile" : "Edit locked (48h passed)"}
+              >
                 Edit Profile
               </Button>
               <Button size="sm" onClick={() => onRecordVisit(patient)}>

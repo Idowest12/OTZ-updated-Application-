@@ -15,10 +15,12 @@ import {
   ChevronLeft,
   ChevronRight,
   TestTube,
+  Shield,
 } from 'lucide-react';
 import { useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 
-export type View = 'dashboard' | 'patients' | 'appointments' | 'viral-load' | 'reports' | 'settings';
+export type View = 'dashboard' | 'patients' | 'appointments' | 'viral-load' | 'reports' | 'settings' | 'admin';
 
 interface SidebarProps {
   currentView: View;
@@ -28,6 +30,7 @@ interface SidebarProps {
 
 export function Sidebar({ currentView, onViewChange, onLogout }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const { isAdmin } = useAuth();
 
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -35,6 +38,7 @@ export function Sidebar({ currentView, onViewChange, onLogout }: SidebarProps) {
     { id: 'appointments', label: 'Appointments', icon: Calendar },
     { id: 'viral-load', label: 'Viral Load', icon: TestTube },
     { id: 'reports', label: 'Reports', icon: FileText },
+    ...(isAdmin ? [{ id: 'admin', label: 'Admin Panel', icon: Shield }] : []),
     { id: 'settings', label: 'Settings', icon: Settings },
   ] as const;
 
@@ -66,7 +70,7 @@ export function Sidebar({ currentView, onViewChange, onLogout }: SidebarProps) {
           return (
             <button
               key={item.id}
-              onClick={() => onViewChange(item.id)}
+              onClick={() => onViewChange(item.id as View)}
               className={cn(
                 'group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200',
                 isActive

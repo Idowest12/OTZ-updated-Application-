@@ -21,6 +21,12 @@ async function testConnection() {
     await getDocFromServer(doc(db, 'test', 'connection'));
     console.log("Firestore connection successful.");
   } catch (error) {
+    // Ignore permission errors on boot as they are expected for unauthenticated users
+    if (error instanceof Error && (error.message.includes('insufficient permissions') || error.message.includes('Missing or insufficient permissions'))) {
+      console.log("Firestore connection test: Authentication required (expected on boot).");
+      return;
+    }
+    
     console.error("Firestore connection error:", error);
     if (error instanceof Error && error.message.includes('the client is offline')) {
       console.error("Please check your Firebase configuration. The client is offline.");

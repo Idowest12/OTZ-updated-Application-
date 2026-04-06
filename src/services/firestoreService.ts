@@ -20,6 +20,37 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
+import { Patient, ActivityLog } from '../types';
+
+// Activity Logging Helper
+async function logActivity(action: string, details: string, type: ActivityLog['type']) {
+  if (!auth.currentUser) return;
+  const path = 'activity_logs';
+  try {
+    const newDocRef = doc(collection(db, path));
+    await setDoc(newDocRef, {
+      userId: auth.currentUser.uid,
+      userName: auth.currentUser.displayName || auth.currentUser.email || 'Unknown User',
+      action,
+      details,
+      type,
+      timestamp: Timestamp.now()
+    });
+  } catch (error) {
+    console.error('Error logging activity:', error);
+  }
+}
+
+export function subscribeToActivityLogs(callback: (logs: ActivityLog[]) => void) {
+  const path = 'activity_logs';
+  const q = query(collection(db, path), orderBy('timestamp', 'desc'));
+  return onSnapshot(q, (snapshot) => {
+    const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityLog));
+    callback(logs);
+  }, (error) => {
+    handleFirestoreError(error, OperationType.GET, path);
+  });
+}
 
 export enum OperationType {
   CREATE = 'create',
@@ -88,6 +119,7 @@ export async function addPatient(patient: any) {
   try {
     const newDocRef = doc(collection(db, path));
     await setDoc(newDocRef, { ...patient, createdAt: Timestamp.now() });
+    await logActivity('Patient Registered', `New patient ${patient.firstName} ${patient.lastName} (${patient.clinicNumber}) added.`, 'Patient');
     return newDocRef.id;
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
@@ -119,6 +151,7 @@ export async function updatePatient(id: string, patient: any) {
   const path = `patients/${id}`;
   try {
     await updateDoc(doc(db, 'patients', id), { ...patient, updatedAt: Timestamp.now() });
+    await logActivity('Patient Updated', `Patient record (ID: ${id}) modified.`, 'Patient');
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -127,7 +160,12 @@ export async function updatePatient(id: string, patient: any) {
 export async function deletePatient(id: string) {
   const path = `patients/${id}`;
   try {
+    const patientDoc = await getDoc(doc(db, 'patients', id));
+    const patientData = patientDoc.data();
+    const patientName = patientData ? `${patientData.firstName} ${patientData.lastName}` : id;
+    
     await deleteDoc(doc(db, 'patients', id));
+    await logActivity('Patient Deleted', `Patient ${patientName} (ID: ${id}) was permanently removed.`, 'Patient');
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
@@ -174,6 +212,12 @@ export async function addVisit(patientId: string, visit: any) {
       patientUpdate.nextCounselingDate = visit.nextCounselingDate;
     }
     await updateDoc(doc(db, 'patients', patientId), patientUpdate);
+
+    const patientDoc = await getDoc(doc(db, 'patients', patientId));
+    const patientData = patientDoc.data();
+    const patientName = patientData ? `${patientData.firstName} ${patientData.lastName}` : patientId;
+
+    await logActivity('Visit Recorded', `New ${visit.type} visit recorded for ${patientName}.`, 'Visit');
 
     // If VL is unsuppressed, create or update a counseling track
     if (visit.vlResult !== undefined && visit.vlResult >= 50) {

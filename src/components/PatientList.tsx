@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
+import { useAuth } from '../contexts/AuthContext';
 
 interface PatientListProps {
   patients: Patient[];
@@ -48,11 +49,21 @@ export function PatientList({
   onTransferOut,
   onActivate
 }: PatientListProps) {
+  const { isAdmin } = useAuth();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'All' | 'Active' | 'LTFU' | 'Graduating' | 'Transferred'>('All');
   const [importStatus, setImportStatus] = useState<{ type: 'idle' | 'loading' | 'success' | 'error', message: string }>({ type: 'idle', message: '' });
   const [confirmImport, setConfirmImport] = useState<{ patients: Omit<Patient, 'id'>[], show: boolean }>({ patients: [], show: false });
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const isEditable = (createdAt?: any) => {
+    if (isAdmin) return true;
+    if (!createdAt) return true; 
+    const createdDate = createdAt.toDate ? createdAt.toDate() : new Date(createdAt);
+    const now = new Date();
+    const diffInHours = (now.getTime() - createdDate.getTime()) / (1000 * 60 * 60);
+    return diffInHours <= 48;
+  };
 
   const filteredPatients = patients.filter((p) => {
     const matchesSearch =
@@ -632,18 +643,26 @@ export function PatientList({
                       )}
                       <button
                         onClick={() => onEditPatient(patient)}
-                        className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                        title="Edit"
+                        className={cn(
+                          "rounded-lg p-2 transition-colors",
+                          isEditable(patient.createdAt) 
+                            ? "text-slate-400 hover:bg-slate-100 hover:text-slate-600" 
+                            : "text-slate-200 cursor-not-allowed"
+                        )}
+                        disabled={!isEditable(patient.createdAt)}
+                        title={isEditable(patient.createdAt) ? "Edit" : "Edit locked (48h passed)"}
                       >
                         <MoreVertical className="h-4 w-4" />
                       </button>
-                      <button
-                        onClick={() => handleDelete(patient.id!)}
-                        className="rounded-lg p-2 text-slate-400 hover:bg-rose-100 hover:text-rose-600"
-                        title="Delete"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      {isAdmin && (
+                        <button
+                          onClick={() => handleDelete(patient.id!)}
+                          className="rounded-lg p-2 text-slate-400 hover:bg-rose-100 hover:text-rose-600"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

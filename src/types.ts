@@ -22,17 +22,19 @@ export interface Patient {
   vlSuppressed?: boolean;
   lastVlDate?: string;
   lastVlResult?: number;
+  createdAt?: any; // Firestore Timestamp
 }
 
 export interface Visit {
   id: string;
   patientId: string;
   date: string;
-  type: 'Drug Pickup & VL Test' | 'Drug Pickup (Proxy)' | 'Clinical Review' | 'Counselling' | 'Other';
+  type: 'Drug Pickup & VL Test' | 'Drug Pickup (Proxy)' | 'Clinical Review' | 'Counselling' | 'Other' | 'Transfer Out' | 'Reactivation';
   notes?: string;
   vlResult?: number;
   nextAppointmentDate?: string;
   nextCounselingDate?: string;
+  createdAt?: any; // Firestore Timestamp
 }
 
 export interface Appointment {
@@ -65,6 +67,16 @@ export interface CounselingTrack {
   completed: boolean;
   completionDate?: string;
   nextCounselingDate?: string;
+}
+
+export interface ActivityLog {
+  id?: string;
+  userId: string;
+  userName: string;
+  action: string;
+  details: string;
+  timestamp: any; // Firestore Timestamp
+  type: 'Patient' | 'Visit' | 'Counseling' | 'System';
 }
 
 export interface DashboardStats {

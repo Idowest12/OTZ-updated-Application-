@@ -72,8 +72,10 @@ service cloud.firestore {
       return isAuthenticated() &&
         ((exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-          (request.auth.token.email == "idowutosin70@gmail.com" && request.auth.token.email_verified == true) ||
-          (request.auth.token.email == "idowu6259@gmail.com" && request.auth.token.email_verified == true));
+          (request.auth.token != null && 
+           request.auth.token.email_verified == true && 
+           (request.auth.token.email == "idowutosin70@gmail.com" || 
+            request.auth.token.email == "idowu6259@gmail.com")));
     }
 
     function hasRequiredFields(fields) {
@@ -86,8 +88,12 @@ service cloud.firestore {
 
     function isValidDateString(dateStr) {
       return dateStr is string &&
-        (dateStr.matches("^[0-9]{4}-[0-9]{2}-[0-9]{2}$") || 
-         dateStr.matches("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}.*Z?$"));
+        (dateStr.matches("^\\d{4}-\\d{2}-\\d{2}$") || 
+         dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$"));
+    }
+
+    function isRecent(createdAt) {
+      return createdAt != null && request.time < createdAt + duration.value(48, 'h');
     }
 
     // ===============================================================
@@ -95,7 +101,7 @@ service cloud.firestore {
     // ===============================================================
 
     function isValidOptionalDate(data, field) {
-      return !(field in data) || data[field] == null || isValidDateString(data[field]);
+      return !(field in data) || data[field] == null || data[field] == "" || isValidDateString(data[field]);
     }
 
     function isValidPatient(data) {
@@ -158,13 +164,13 @@ service cloud.firestore {
     match /patients/{patientId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidPatient(request.resource.data);
-      allow update: if isAuthenticated() && isValidPatient(request.resource.data);
+      allow update: if isAuthenticated() && (isAdmin() || (isRecent(resource.data.createdAt) && isValidPatient(request.resource.data)));
       allow delete: if isAdmin();
 
       match /visits/{visitId} {
         allow read: if isAuthenticated();
         allow create: if isAuthenticated() && isValidVisit(request.resource.data);
-        allow update: if isAuthenticated() && isValidVisit(request.resource.data);
+        allow update: if isAuthenticated() && (isAdmin() || (isRecent(resource.data.createdAt) && isValidVisit(request.resource.data)));
         allow delete: if isAdmin();
       }
     }
@@ -172,7 +178,7 @@ service cloud.firestore {
     match /visits/{visitId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidVisit(request.resource.data);
-      allow update: if isAuthenticated() && isValidVisit(request.resource.data);
+      allow update: if isAuthenticated() && (isAdmin() || (isRecent(resource.data.createdAt) && isValidVisit(request.resource.data)));
       allow delete: if isAdmin();
     }
 
@@ -188,6 +194,12 @@ service cloud.firestore {
       allow create: if isAuthenticated() && isValidCounselingTrack(request.resource.data);
       allow update: if isAuthenticated() && isValidCounselingTrack(request.resource.data);
       allow delete: if isAdmin();
+    }
+
+    match /activity_logs/{logId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
     }
 
     match /test/{docId} {
