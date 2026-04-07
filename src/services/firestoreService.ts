@@ -109,6 +109,36 @@ export async function clearAllActivityLogs() {
   }
 }
 
+async function clearCollectionData(collectionName: string, logMessage: string) {
+  try {
+    const q = query(collection(db, collectionName));
+    const snapshot = await getDocs(q);
+    let batch = writeBatch(db);
+    let count = 0;
+    for (const document of snapshot.docs) {
+      batch.delete(document.ref);
+      count++;
+      if (count === 500) {
+        await batch.commit();
+        batch = writeBatch(db);
+        count = 0;
+      }
+    }
+    if (count > 0) {
+      await batch.commit();
+    }
+    await logActivity('System Cleanup', logMessage, 'System');
+    return snapshot.size;
+  } catch (error) {
+    console.error(`Error clearing ${collectionName}:`, error);
+    throw error;
+  }
+}
+
+export const clearAllVisits = () => clearCollectionData('visits', 'Cleared all visit records');
+export const clearAllCounseling = () => clearCollectionData('counseling_tracks', 'Cleared all counseling records');
+export const clearAllAppointments = () => clearCollectionData('appointments', 'Cleared all appointment records');
+
 export async function wipeAllTestData() {
   const collectionsToClear = ['patients', 'visits', 'appointments', 'counseling_tracks', 'activity_logs'];
   

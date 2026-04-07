@@ -7,7 +7,15 @@ import { useState, useEffect } from 'react';
 import { Card } from './ui/Card';
 import { Button } from './ui/Button';
 import { ActivityLog } from '../types';
-import { subscribeToActivityLogs, cleanupOldLogs, wipeAllTestData, clearAllActivityLogs } from '../services/firestoreService';
+import { 
+  subscribeToActivityLogs, 
+  cleanupOldLogs, 
+  wipeAllTestData, 
+  clearAllActivityLogs,
+  clearAllVisits,
+  clearAllCounseling,
+  clearAllAppointments
+} from '../services/firestoreService';
 import { formatDate } from '../utils';
 import { 
   Shield, 
@@ -36,10 +44,17 @@ export function AdminPanel() {
   const [filter, setFilter] = useState<ActivityLog['type'] | 'All'>('All');
   const [isCleanupModalOpen, setIsCleanupModalOpen] = useState(false);
   const [isClearLogsModalOpen, setIsClearLogsModalOpen] = useState(false);
+  const [isClearVisitsModalOpen, setIsClearVisitsModalOpen] = useState(false);
+  const [isClearCounselingModalOpen, setIsClearCounselingModalOpen] = useState(false);
+  const [isClearAppointmentsModalOpen, setIsClearAppointmentsModalOpen] = useState(false);
   const [isWipeModalOpen, setIsWipeModalOpen] = useState(false);
   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
+  
   const [isCleaning, setIsCleaning] = useState(false);
   const [isClearingLogs, setIsClearingLogs] = useState(false);
+  const [isClearingVisits, setIsClearingVisits] = useState(false);
+  const [isClearingCounseling, setIsClearingCounseling] = useState(false);
+  const [isClearingAppointments, setIsClearingAppointments] = useState(false);
   const [isWiping, setIsWiping] = useState(false);
   const [wipeConfirmText, setWipeConfirmText] = useState('');
 
@@ -121,6 +136,45 @@ export function AdminPanel() {
       alert('Failed to clear logs. Please try again.');
     } finally {
       setIsClearingLogs(false);
+    }
+  };
+
+  const handleClearVisits = async () => {
+    setIsClearingVisits(true);
+    try {
+      const count = await clearAllVisits();
+      alert(`Successfully cleared ${count} visit records.`);
+      setIsClearVisitsModalOpen(false);
+    } catch (error) {
+      alert('Failed to clear visits. Please try again.');
+    } finally {
+      setIsClearingVisits(false);
+    }
+  };
+
+  const handleClearCounseling = async () => {
+    setIsClearingCounseling(true);
+    try {
+      const count = await clearAllCounseling();
+      alert(`Successfully cleared ${count} counseling records.`);
+      setIsClearCounselingModalOpen(false);
+    } catch (error) {
+      alert('Failed to clear counseling records. Please try again.');
+    } finally {
+      setIsClearingCounseling(false);
+    }
+  };
+
+  const handleClearAppointments = async () => {
+    setIsClearingAppointments(true);
+    try {
+      const count = await clearAllAppointments();
+      alert(`Successfully cleared ${count} appointment records.`);
+      setIsClearAppointmentsModalOpen(false);
+    } catch (error) {
+      alert('Failed to clear appointments. Please try again.');
+    } finally {
+      setIsClearingAppointments(false);
     }
   };
 
@@ -307,6 +361,30 @@ export function AdminPanel() {
               </Button>
               <Button 
                 variant="outline" 
+                className="justify-start gap-2 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:text-amber-700 border-amber-100 dark:border-amber-900/30"
+                onClick={() => setIsClearVisitsModalOpen(true)}
+              >
+                <Trash2 className="h-4 w-4" />
+                Clear All Visits
+              </Button>
+              <Button 
+                variant="outline" 
+                className="justify-start gap-2 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:text-amber-700 border-amber-100 dark:border-amber-900/30"
+                onClick={() => setIsClearCounselingModalOpen(true)}
+              >
+                <Trash2 className="h-4 w-4" />
+                Clear All Counseling
+              </Button>
+              <Button 
+                variant="outline" 
+                className="justify-start gap-2 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:text-amber-700 border-amber-100 dark:border-amber-900/30"
+                onClick={() => setIsClearAppointmentsModalOpen(true)}
+              >
+                <Trash2 className="h-4 w-4" />
+                Clear All Appointments
+              </Button>
+              <Button 
+                variant="outline" 
                 className="justify-start gap-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-700 border-red-200 dark:border-red-900/50 font-bold"
                 onClick={() => setIsWipeModalOpen(true)}
               >
@@ -369,6 +447,90 @@ export function AdminPanel() {
               disabled={isClearingLogs}
             >
               {isClearingLogs ? 'Clearing...' : 'Confirm Clear Logs'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Clear Visits Modal */}
+      <Modal
+        isOpen={isClearVisitsModalOpen}
+        onClose={() => setIsClearVisitsModalOpen(false)}
+        title="Clear All Visits"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 p-4 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-900/30">
+            <AlertTriangle className="h-6 w-6 shrink-0" />
+            <p className="text-sm font-medium">
+              This will permanently delete ALL visit records. Patient demographics will NOT be affected.
+            </p>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setIsClearVisitsModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={handleClearVisits}
+              disabled={isClearingVisits}
+            >
+              {isClearingVisits ? 'Clearing...' : 'Confirm Clear Visits'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Clear Counseling Modal */}
+      <Modal
+        isOpen={isClearCounselingModalOpen}
+        onClose={() => setIsClearCounselingModalOpen(false)}
+        title="Clear All Counseling Records"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 p-4 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-900/30">
+            <AlertTriangle className="h-6 w-6 shrink-0" />
+            <p className="text-sm font-medium">
+              This will permanently delete ALL counseling tracks and sessions. Patient demographics will NOT be affected.
+            </p>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setIsClearCounselingModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={handleClearCounseling}
+              disabled={isClearingCounseling}
+            >
+              {isClearingCounseling ? 'Clearing...' : 'Confirm Clear Counseling'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Clear Appointments Modal */}
+      <Modal
+        isOpen={isClearAppointmentsModalOpen}
+        onClose={() => setIsClearAppointmentsModalOpen(false)}
+        title="Clear All Appointments"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 p-4 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-900/30">
+            <AlertTriangle className="h-6 w-6 shrink-0" />
+            <p className="text-sm font-medium">
+              This will permanently delete ALL appointments. Patient demographics will NOT be affected.
+            </p>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setIsClearAppointmentsModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={handleClearAppointments}
+              disabled={isClearingAppointments}
+            >
+              {isClearingAppointments ? 'Clearing...' : 'Confirm Clear Appointments'}
             </Button>
           </div>
         </div>
