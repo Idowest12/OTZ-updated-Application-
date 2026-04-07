@@ -7,7 +7,7 @@ import { useState, useEffect } from 'react';
 import { Card } from './ui/Card';
 import { Button } from './ui/Button';
 import { ActivityLog } from '../types';
-import { subscribeToActivityLogs, cleanupOldLogs } from '../services/firestoreService';
+import { subscribeToActivityLogs, cleanupOldLogs, wipeAllTestData, clearAllActivityLogs } from '../services/firestoreService';
 import { formatDate } from '../utils';
 import { 
   Shield, 
@@ -35,8 +35,13 @@ export function AdminPanel() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<ActivityLog['type'] | 'All'>('All');
   const [isCleanupModalOpen, setIsCleanupModalOpen] = useState(false);
+  const [isClearLogsModalOpen, setIsClearLogsModalOpen] = useState(false);
+  const [isWipeModalOpen, setIsWipeModalOpen] = useState(false);
   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
   const [isCleaning, setIsCleaning] = useState(false);
+  const [isClearingLogs, setIsClearingLogs] = useState(false);
+  const [isWiping, setIsWiping] = useState(false);
+  const [wipeConfirmText, setWipeConfirmText] = useState('');
 
   // Hardcoded for now as per AuthContext
   const adminEmails = ['idowutosin70@gmail.com', 'idowu6259@gmail.com'];
@@ -103,6 +108,35 @@ export function AdminPanel() {
       alert('Failed to cleanup logs. Please try again.');
     } finally {
       setIsCleaning(false);
+    }
+  };
+
+  const handleClearAllLogs = async () => {
+    setIsClearingLogs(true);
+    try {
+      const deletedCount = await clearAllActivityLogs();
+      alert(`Successfully cleared ${deletedCount} activity logs.`);
+      setIsClearLogsModalOpen(false);
+    } catch (error) {
+      alert('Failed to clear logs. Please try again.');
+    } finally {
+      setIsClearingLogs(false);
+    }
+  };
+
+  const handleWipeData = async () => {
+    if (wipeConfirmText !== 'DELETE ALL') return;
+    
+    setIsWiping(true);
+    try {
+      await wipeAllTestData();
+      alert('Successfully wiped all test data. The system is now clean.');
+      setIsWipeModalOpen(false);
+      setWipeConfirmText('');
+    } catch (error) {
+      alert('Failed to wipe test data. Please try again.');
+    } finally {
+      setIsWiping(false);
     }
   };
 
@@ -263,6 +297,22 @@ export function AdminPanel() {
                 <Trash2 className="h-4 w-4" />
                 Cleanup Old Logs
               </Button>
+              <Button 
+                variant="outline" 
+                className="justify-start gap-2 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:text-amber-700 border-amber-100 dark:border-amber-900/30"
+                onClick={() => setIsClearLogsModalOpen(true)}
+              >
+                <Trash2 className="h-4 w-4" />
+                Clear All Activity Logs
+              </Button>
+              <Button 
+                variant="outline" 
+                className="justify-start gap-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-700 border-red-200 dark:border-red-900/50 font-bold"
+                onClick={() => setIsWipeModalOpen(true)}
+              >
+                <AlertTriangle className="h-4 w-4" />
+                Factory Reset (Wipe All Data)
+              </Button>
             </div>
           </Card>
         </div>
@@ -291,6 +341,90 @@ export function AdminPanel() {
               disabled={isCleaning}
             >
               {isCleaning ? 'Cleaning...' : 'Confirm Cleanup'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Clear All Logs Confirmation Modal */}
+      <Modal
+        isOpen={isClearLogsModalOpen}
+        onClose={() => setIsClearLogsModalOpen(false)}
+        title="Clear All Activity Logs"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 p-4 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-900/30">
+            <AlertTriangle className="h-6 w-6 shrink-0" />
+            <p className="text-sm font-medium">
+              This will permanently delete ALL activity logs. Your patient data, visits, and appointments will NOT be affected.
+            </p>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setIsClearLogsModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={handleClearAllLogs}
+              disabled={isClearingLogs}
+            >
+              {isClearingLogs ? 'Clearing...' : 'Confirm Clear Logs'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Wipe Data Confirmation Modal */}
+      <Modal
+        isOpen={isWipeModalOpen}
+        onClose={() => {
+          setIsWipeModalOpen(false);
+          setWipeConfirmText('');
+        }}
+        title="Factory Reset (Wipe All Data)"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 rounded-lg bg-red-50 dark:bg-red-900/20 p-4 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-900/50">
+            <AlertTriangle className="h-6 w-6 shrink-0 mt-0.5" />
+            <div className="space-y-2">
+              <p className="text-sm font-bold">
+                WARNING: This is a destructive action!
+              </p>
+              <p className="text-sm">
+                This will permanently delete ALL patients, visits, appointments, counseling tracks, and activity logs. It cannot be undone.
+              </p>
+            </div>
+          </div>
+          
+          <div className="space-y-2 pt-2">
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+              Type <span className="font-mono font-bold text-red-600 dark:text-red-400">DELETE ALL</span> to confirm:
+            </label>
+            <input
+              type="text"
+              value={wipeConfirmText}
+              onChange={(e) => setWipeConfirmText(e.target.value)}
+              className="w-full rounded-lg border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-slate-900 dark:text-white focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+              placeholder="DELETE ALL"
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsWipeModalOpen(false);
+                setWipeConfirmText('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              className="bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={handleWipeData}
+              disabled={isWiping || wipeConfirmText !== 'DELETE ALL'}
+            >
+              {isWiping ? 'Wiping Data...' : 'Permanently Delete All Data'}
             </Button>
           </div>
         </div>

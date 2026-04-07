@@ -74,6 +74,80 @@ export async function cleanupOldLogs(days: number = 30) {
   }
 }
 
+export async function clearAllActivityLogs() {
+  const path = 'activity_logs';
+  try {
+    const q = query(collection(db, path));
+    const snapshot = await getDocs(q);
+    
+    let batch = writeBatch(db);
+    let count = 0;
+    
+    for (const document of snapshot.docs) {
+      batch.delete(document.ref);
+      count++;
+      if (count === 500) {
+        await batch.commit();
+        batch = writeBatch(db);
+        count = 0;
+      }
+    }
+    if (count > 0) {
+      await batch.commit();
+    }
+    
+    await logActivity(
+      'System Cleanup',
+      'Cleared all activity logs',
+      'System'
+    );
+    
+    return snapshot.size;
+  } catch (error) {
+    console.error('Error clearing logs:', error);
+    throw error;
+  }
+}
+
+export async function wipeAllTestData() {
+  const collectionsToClear = ['patients', 'visits', 'appointments', 'counseling_tracks', 'activity_logs'];
+  
+  try {
+    for (const collectionName of collectionsToClear) {
+      const q = query(collection(db, collectionName));
+      const snapshot = await getDocs(q);
+      
+      let batch = writeBatch(db);
+      let count = 0;
+      
+      for (const document of snapshot.docs) {
+        batch.delete(document.ref);
+        count++;
+        if (count === 500) {
+          await batch.commit();
+          batch = writeBatch(db);
+          count = 0;
+        }
+      }
+      if (count > 0) {
+        await batch.commit();
+      }
+    }
+    
+    // Log the wipe action after clearing everything
+    await logActivity(
+      'Factory Reset',
+      'Wiped all test data from the system',
+      'System'
+    );
+    
+    return true;
+  } catch (error) {
+    console.error('Error wiping test data:', error);
+    throw error;
+  }
+}
+
 export enum OperationType {
   CREATE = 'create',
   UPDATE = 'update',
