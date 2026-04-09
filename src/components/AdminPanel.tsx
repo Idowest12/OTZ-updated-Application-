@@ -14,8 +14,12 @@ import {
   clearAllActivityLogs,
   clearAllVisits,
   clearAllCounseling,
-  clearAllAppointments
+  clearAllAppointments,
+  graduatePatientsOver25,
+  subscribeToUsers,
+  updateUserRole
 } from '../services/firestoreService';
+import { UserProfile } from '../types';
 import { formatDate } from '../utils';
 import { 
   Shield, 
@@ -40,6 +44,7 @@ import { useAuth } from '../contexts/AuthContext';
 export function AdminPanel() {
   const { isAdmin } = useAuth();
   const [logs, setLogs] = useState<ActivityLog[]>([]);
+  const [users, setUsers] = useState<UserProfile[]>([]);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<ActivityLog['type'] | 'All'>('All');
   const [isCleanupModalOpen, setIsCleanupModalOpen] = useState(false);
@@ -47,6 +52,7 @@ export function AdminPanel() {
   const [isClearVisitsModalOpen, setIsClearVisitsModalOpen] = useState(false);
   const [isClearCounselingModalOpen, setIsClearCounselingModalOpen] = useState(false);
   const [isClearAppointmentsModalOpen, setIsClearAppointmentsModalOpen] = useState(false);
+  const [isGraduateModalOpen, setIsGraduateModalOpen] = useState(false);
   const [isWipeModalOpen, setIsWipeModalOpen] = useState(false);
   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
   
@@ -55,6 +61,7 @@ export function AdminPanel() {
   const [isClearingVisits, setIsClearingVisits] = useState(false);
   const [isClearingCounseling, setIsClearingCounseling] = useState(false);
   const [isClearingAppointments, setIsClearingAppointments] = useState(false);
+  const [isGraduating, setIsGraduating] = useState(false);
   const [isWiping, setIsWiping] = useState(false);
   const [wipeConfirmText, setWipeConfirmText] = useState('');
 
@@ -62,10 +69,18 @@ export function AdminPanel() {
   const adminEmails = ['idowutosin70@gmail.com', 'idowu6259@gmail.com'];
 
   useEffect(() => {
-    const unsubscribe = subscribeToActivityLogs((data) => {
+    const unsubscribeLogs = subscribeToActivityLogs((data) => {
       setLogs(data);
     });
-    return () => unsubscribe();
+    
+    const unsubscribeUsers = subscribeToUsers((data) => {
+      setUsers(data);
+    });
+    
+    return () => {
+      unsubscribeLogs();
+      unsubscribeUsers();
+    };
   }, []);
 
   const filteredLogs = logs.filter(log => {
@@ -175,6 +190,29 @@ export function AdminPanel() {
       alert('Failed to clear appointments. Please try again.');
     } finally {
       setIsClearingAppointments(false);
+    }
+  };
+
+  const handleGraduatePatients = async () => {
+    setIsGraduating(true);
+    try {
+      const count = await graduatePatientsOver25();
+      alert(`Successfully graduated ${count} patients over the age of 25.`);
+      setIsGraduateModalOpen(false);
+    } catch (error) {
+      alert('Failed to graduate patients. Please try again.');
+    } finally {
+      setIsGraduating(false);
+    }
+  };
+
+  const handleRoleChange = async (uid: string, newRole: 'admin' | 'staff') => {
+    if (window.confirm(`Are you sure you want to change this user's role to ${newRole}?`)) {
+      try {
+        await updateUserRole(uid, newRole);
+      } catch (error) {
+        alert('Failed to update user role.');
+      }
     }
   };
 
@@ -385,6 +423,14 @@ export function AdminPanel() {
               </Button>
               <Button 
                 variant="outline" 
+                className="justify-start gap-2 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-700 border-indigo-100 dark:border-indigo-900/30"
+                onClick={() => setIsGraduateModalOpen(true)}
+              >
+                <UserCheck className="h-4 w-4" />
+                Graduate Patients {'>'} 25
+              </Button>
+              <Button 
+                variant="outline" 
                 className="justify-start gap-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-700 border-red-200 dark:border-red-900/50 font-bold"
                 onClick={() => setIsWipeModalOpen(true)}
               >
@@ -536,6 +582,104 @@ export function AdminPanel() {
         </div>
       </Modal>
 
+      {/* Graduate Patients Modal */}
+      <Modal
+        isOpen={isGraduateModalOpen}
+        onClose={() => setIsGraduateModalOpen(false)}
+        title="Graduate Patients > 25"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 p-4 text-indigo-700 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/30">
+            <UserCheck className="h-6 w-6 shrink-0" />
+            <p className="text-sm font-medium">
+              This action will find all active patients who are older than 25 and change their status to "Graduated". This helps keep your active roster focused on the target age group.
+            </p>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setIsGraduateModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+              onClick={handleGraduatePatients}
+              disabled={isGraduating}
+            >
+              {isGraduating ? 'Graduating...' : 'Confirm Graduation'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* User Management Modal */}
+      <Modal
+        isOpen={isStaffModalOpen}
+        onClose={() => setIsStaffModalOpen(false)}
+        title="Manage Staff Access"
+        size="lg"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 p-4 text-indigo-700 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/30">
+            <ShieldCheck className="h-6 w-6 shrink-0" />
+            <p className="text-sm font-medium">
+              Manage roles for users who have signed into the application. Admins have full access, while Staff have restricted access.
+            </p>
+          </div>
+          
+          <div className="max-h-[60vh] overflow-y-auto pr-2 space-y-3">
+            {users.length === 0 ? (
+              <p className="text-center text-sm text-slate-500 py-4">No users found.</p>
+            ) : (
+              users.map(user => (
+                <div key={user.uid} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+                  <div className="flex items-center gap-3">
+                    {user.photoURL ? (
+                      <img src={user.photoURL} alt={user.displayName} className="h-10 w-10 rounded-full" referrerPolicy="no-referrer" />
+                    ) : (
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-100 text-indigo-700 font-bold">
+                        {user.displayName?.charAt(0) || user.email?.charAt(0) || '?'}
+                      </div>
+                    )}
+                    <div>
+                      <h4 className="font-semibold text-slate-900 dark:text-white">
+                        {user.displayName || 'Unknown User'}
+                      </h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{user.email}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-3">
+                    <span className={cn(
+                      "px-2.5 py-1 rounded-full text-xs font-medium",
+                      user.role === 'admin' 
+                        ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
+                        : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                    )}>
+                      {user.role.toUpperCase()}
+                    </span>
+                    
+                    <select
+                      className="rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2 py-1 text-xs font-medium text-slate-600 dark:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      value={user.role}
+                      onChange={(e) => handleRoleChange(user.uid, e.target.value as 'admin' | 'staff')}
+                      disabled={adminEmails.includes(user.email)} // Prevent changing hardcoded admins
+                    >
+                      <option value="staff">Staff</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          
+          <div className="flex justify-end pt-4">
+            <Button onClick={() => setIsStaffModalOpen(false)}>
+              Close
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Wipe Data Confirmation Modal */}
       <Modal
         isOpen={isWipeModalOpen}
@@ -592,41 +736,6 @@ export function AdminPanel() {
         </div>
       </Modal>
 
-      {/* Staff Access Modal */}
-      <Modal
-        isOpen={isStaffModalOpen}
-        onClose={() => setIsStaffModalOpen(false)}
-        title="Administrative Staff Access"
-      >
-        <div className="space-y-6">
-          <div className="space-y-4">
-            <p className="text-sm text-slate-500">
-              The following users have administrative privileges. Currently, these are managed via system configuration.
-            </p>
-            <div className="divide-y divide-slate-100 rounded-xl border border-slate-100">
-              {adminEmails.map((email) => (
-                <div key={email} className="flex items-center justify-between p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
-                      <ShieldCheck className="h-4 w-4" />
-                    </div>
-                    <span className="text-sm font-medium text-slate-900">{email}</span>
-                  </div>
-                  <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700 uppercase">
-                    Admin
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="rounded-lg bg-slate-50 p-4 text-xs text-slate-500 italic">
-            Note: To add or remove administrative users, please contact the system developer or update the security configuration.
-          </div>
-          <div className="flex justify-end">
-            <Button onClick={() => setIsStaffModalOpen(false)}>Close</Button>
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 }

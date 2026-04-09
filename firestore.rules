@@ -158,7 +158,14 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
-      allow create, update: if isAdmin();
+      allow create: if isAuthenticated() && request.auth.uid == userId && (
+        request.resource.data.role == 'staff' || 
+        (request.resource.data.role == 'admin' && isAdmin())
+      );
+      allow update: if isAuthenticated() && (
+        isAdmin() || 
+        (request.auth.uid == userId && request.resource.data.role == resource.data.role)
+      );
     }
 
     match /patients/{patientId} {

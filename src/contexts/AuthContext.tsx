@@ -5,7 +5,9 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
-import { auth } from '../firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../firebase';
+import { saveUserProfile } from '../services/firestoreService';
 
 interface AuthContextType {
   user: User | null;
@@ -25,9 +27,32 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setUser(user);
-      setIsAdmin(user ? ADMIN_EMAILS.includes(user.email || "") : false);
+      
+      if (user) {
+        // Check if user is in the hardcoded admin list
+        const isHardcodedAdmin = ADMIN_EMAILS.includes(user.email || "");
+        
+        // Save/update user profile in Firestore
+        await saveUserProfile(user, isHardcodedAdmin ? 'admin' : 'staff');
+        
+        // Get their actual role from Firestore
+        try {
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          if (userDoc.exists() && userDoc.data().role === 'admin') {
+            setIsAdmin(true);
+          } else {
+            setIsAdmin(isHardcodedAdmin); // Fallback to hardcoded list
+          }
+        } catch (error) {
+          console.error("Error fetching user role:", error);
+          setIsAdmin(isHardcodedAdmin);
+        }
+      } else {
+        setIsAdmin(false);
+      }
+      
       setLoading(false);
     });
     return () => unsubscribe();

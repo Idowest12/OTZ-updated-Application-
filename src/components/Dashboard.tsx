@@ -3,7 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { useState } from 'react';
 import { Card } from '@/src/components/ui/Card';
+import { PendingVLModal } from '@/src/components/PendingVLModal';
 import {
   Users,
   Activity,
@@ -31,11 +33,20 @@ import { Patient, Visit, CounselingTrack } from '@/src/types';
 const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 export function Dashboard({ patients, appointments, visits, tracks = [] }: { patients: Patient[], appointments: any[], visits: Visit[], tracks?: CounselingTrack[] }) {
+  const [isPendingVLModalOpen, setIsPendingVLModalOpen] = useState(false);
+
   const activePatients = patients.filter(p => p.ltfuStatus === 'Active').length;
   const ltfuPatients = patients.filter(p => p.ltfuStatus === 'LTFU').length;
   const suppressedPatients = patients.filter(p => p.vlSuppressed).length;
   const upcomingVisits = appointments.filter(a => a.status === 'Pending').length;
   const pendingCounseling = tracks.filter(t => !t.completed).length;
+
+  // Find patients who have visited but don't have a VL result
+  const pendingVlPatients = patients.filter(p => 
+    p.ltfuStatus === 'Active' && 
+    p.lastVisitDate && 
+    (p.lastVlResult === undefined || p.lastVlResult === null)
+  );
 
   // Calculate monthly visits for the last 6 months
   const monthlyVisitsData = Array.from({ length: 6 }, (_, i) => {
@@ -76,6 +87,16 @@ export function Dashboard({ patients, appointments, visits, tracks = [] }: { pat
       color: 'text-rose-600 dark:text-rose-400',
       bg: 'bg-rose-50 dark:bg-rose-900/20',
       trend: 'Require follow-up',
+    },
+    {
+      label: 'Pending VL Entry',
+      value: pendingVlPatients.length.toString(),
+      icon: Activity,
+      color: 'text-indigo-600 dark:text-indigo-400',
+      bg: 'bg-indigo-50 dark:bg-indigo-900/20',
+      trend: 'Needs VL update',
+      onClick: () => setIsPendingVLModalOpen(true),
+      clickable: true
     },
     {
       label: 'Upcoming Visits',
@@ -121,7 +142,14 @@ export function Dashboard({ patients, appointments, visits, tracks = [] }: { pat
         {stats.map((stat) => {
           const Icon = stat.icon;
           return (
-            <Card key={stat.label} className="relative overflow-hidden">
+            <Card 
+              key={stat.label} 
+              className={cn(
+                "relative overflow-hidden",
+                stat.clickable && "cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all"
+              )}
+              onClick={stat.onClick}
+            >
               <div className="flex items-center gap-4">
                 <div className={cn('rounded-xl p-3', stat.bg)}>
                   <Icon className={cn('h-6 w-6', stat.color)} />
@@ -308,6 +336,12 @@ export function Dashboard({ patients, appointments, visits, tracks = [] }: { pat
           </div>
         </Card>
       </div>
+
+      <PendingVLModal 
+        isOpen={isPendingVLModalOpen}
+        onClose={() => setIsPendingVLModalOpen(false)}
+        patients={pendingVlPatients}
+      />
     </div>
   );
 }

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type LtfuStatus = 'Active' | 'LTFU' | 'Dead' | 'Transferred Out';
+export type LtfuStatus = 'Active' | 'LTFU' | 'Dead' | 'Transferred Out' | 'Graduated';
 
 export interface Patient {
   id: string;
@@ -86,4 +86,14 @@ export interface DashboardStats {
   suppressedPatients: number;
   pendingVl: number;
   upcomingVisits: number;
+}
+
+export interface UserProfile {
+  uid: string;
+  email: string;
+  displayName: string;
+  photoURL: string;
+  role: 'admin' | 'staff';
+  lastLogin: string;
+  createdAt: string;
 }

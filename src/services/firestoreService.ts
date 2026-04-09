@@ -21,7 +21,7 @@ import {
   limit,
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { Patient, ActivityLog } from '../types';
+import { Patient, ActivityLog, UserProfile } from '../types';
 
 // Activity Logging Helper
 async function logActivity(action: string, details: string, type: ActivityLog['type']) {
@@ -74,6 +74,70 @@ export async function cleanupOldLogs(days: number = 30) {
   }
 }
 
+export async function updatePatientVL(patientId: string, vlResult: number, vlDate: string) {
+  const path = 'patients';
+  try {
+    const patientRef = doc(db, path, patientId);
+    const vlSuppressed = vlResult < 1000;
+    
+    await updateDoc(patientRef, {
+      lastVlResult: vlResult,
+      lastVlDate: vlDate,
+      vlSuppressed: vlSuppressed
+    });
+    
+    await logActivity(
+      'Viral Load Updated',
+      `Updated VL for patient ID: ${patientId} to ${vlResult} copies/mL`,
+      'Patient'
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function graduatePatientsOver25() {
+  const path = 'patients';
+  try {
+    const q = query(collection(db, path), where('ltfuStatus', '==', 'Active'));
+    const snapshot = await getDocs(q);
+    
+    let batch = writeBatch(db);
+    let count = 0;
+    
+    for (const document of snapshot.docs) {
+      const patient = document.data() as Patient;
+      if (patient.age > 25) {
+        batch.update(document.ref, { ltfuStatus: 'Graduated' });
+        count++;
+        
+        if (count === 500) {
+          await batch.commit();
+          batch = writeBatch(db);
+          count = 0;
+        }
+      }
+    }
+    
+    if (count > 0) {
+      await batch.commit();
+    }
+    
+    if (count > 0) {
+      await logActivity(
+        'Patients Graduated',
+        `Graduated ${count} patients over the age of 25`,
+        'System'
+      );
+    }
+    
+    return count;
+  } catch (error) {
+    console.error('Error graduating patients:', error);
+    throw error;
+  }
+}
+
 export async function clearAllActivityLogs() {
   const path = 'activity_logs';
   try {
@@ -106,6 +170,58 @@ export async function clearAllActivityLogs() {
   } catch (error) {
     console.error('Error clearing logs:', error);
     throw error;
+  }
+}
+
+export async function saveUserProfile(user: any, defaultRole: 'admin' | 'staff' = 'staff') {
+  const path = 'users';
+  try {
+    const userRef = doc(db, path, user.uid);
+    const userSnap = await getDoc(userRef);
+    
+    const now = new Date().toISOString();
+    
+    if (!userSnap.exists()) {
+      await setDoc(userRef, {
+        uid: user.uid,
+        email: user.email || '',
+        displayName: user.displayName || '',
+        photoURL: user.photoURL || '',
+        role: defaultRole,
+        createdAt: now,
+        lastLogin: now
+      });
+    } else {
+      await updateDoc(userRef, {
+        displayName: user.displayName || userSnap.data().displayName,
+        photoURL: user.photoURL || userSnap.data().photoURL,
+        lastLogin: now
+      });
+    }
+  } catch (error) {
+    console.error('Error saving user profile:', error);
+  }
+}
+
+export function subscribeToUsers(callback: (users: UserProfile[]) => void) {
+  const path = 'users';
+  const q = query(collection(db, path), orderBy('createdAt', 'desc'));
+  return onSnapshot(q, (snapshot) => {
+    const users = snapshot.docs.map(doc => doc.data() as UserProfile);
+    callback(users);
+  }, (error) => {
+    console.error('Error subscribing to users:', error);
+  });
+}
+
+export async function updateUserRole(uid: string, newRole: 'admin' | 'staff') {
+  const path = 'users';
+  try {
+    const userRef = doc(db, path, uid);
+    await updateDoc(userRef, { role: newRole });
+    await logActivity('System', `Updated user role for ${uid} to ${newRole}`, 'System');
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
   }
 }
 
