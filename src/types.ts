@@ -83,6 +83,9 @@ export interface DashboardStats {
   totalPatients: number;
   activePatients: number;
   ltfuPatients: number;
+  graduatedPatients: number;
+  transferredOutPatients: number;
+  deadPatients: number;
   suppressedPatients: number;
   pendingVl: number;
   upcomingVisits: number;

@@ -6,6 +6,7 @@
 import { useState } from 'react';
 import { Card } from '@/src/components/ui/Card';
 import { PendingVLModal } from '@/src/components/PendingVLModal';
+import { PatientListModal } from '@/src/components/PatientListModal';
 import {
   Users,
   Activity,
@@ -14,6 +15,9 @@ import {
   TrendingUp,
   CheckCircle2,
   FileText,
+  GraduationCap,
+  ArrowRightLeft,
+  UserMinus
 } from 'lucide-react';
 import {
   BarChart,
@@ -34,9 +38,21 @@ const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 export function Dashboard({ patients, appointments, visits, tracks = [] }: { patients: Patient[], appointments: any[], visits: Visit[], tracks?: CounselingTrack[] }) {
   const [isPendingVLModalOpen, setIsPendingVLModalOpen] = useState(false);
+  const [listModalOpen, setListModalOpen] = useState(false);
+  const [listModalTitle, setListModalTitle] = useState('');
+  const [listModalPatients, setListModalPatients] = useState<Patient[]>([]);
+
+  const openPatientList = (title: string, filteredPatients: Patient[]) => {
+    setListModalTitle(title);
+    setListModalPatients(filteredPatients);
+    setListModalOpen(true);
+  };
 
   const activePatients = patients.filter(p => p.ltfuStatus === 'Active').length;
   const ltfuPatients = patients.filter(p => p.ltfuStatus === 'LTFU').length;
+  const graduatedPatients = patients.filter(p => p.ltfuStatus === 'Graduated').length;
+  const transferredOutPatients = patients.filter(p => p.ltfuStatus === 'Transferred Out').length;
+  const deadPatients = patients.filter(p => p.ltfuStatus === 'Dead').length;
   const suppressedPatients = patients.filter(p => p.vlSuppressed).length;
   const upcomingVisits = appointments.filter(a => a.status === 'Pending').length;
   const pendingCounseling = tracks.filter(t => !t.completed).length;
@@ -71,6 +87,8 @@ export function Dashboard({ patients, appointments, visits, tracks = [] }: { pat
       color: 'text-indigo-600 dark:text-indigo-400',
       bg: 'bg-indigo-50 dark:bg-indigo-900/20',
       trend: 'Total registered',
+      clickable: true,
+      onClick: () => openPatientList('All Registered Patients', patients)
     },
     {
       label: 'Active on ART',
@@ -79,6 +97,8 @@ export function Dashboard({ patients, appointments, visits, tracks = [] }: { pat
       color: 'text-emerald-600 dark:text-emerald-400',
       bg: 'bg-emerald-50 dark:bg-emerald-900/20',
       trend: `${((activePatients / (patients.length || 1)) * 100).toFixed(1)}% retention`,
+      clickable: true,
+      onClick: () => openPatientList('Active Patients', patients.filter(p => p.ltfuStatus === 'Active'))
     },
     {
       label: 'LTFU Patients',
@@ -87,6 +107,38 @@ export function Dashboard({ patients, appointments, visits, tracks = [] }: { pat
       color: 'text-rose-600 dark:text-rose-400',
       bg: 'bg-rose-50 dark:bg-rose-900/20',
       trend: 'Require follow-up',
+      clickable: true,
+      onClick: () => openPatientList('Lost to Follow-Up (LTFU)', patients.filter(p => p.ltfuStatus === 'LTFU'))
+    },
+    {
+      label: 'Graduated',
+      value: graduatedPatients.toString(),
+      icon: GraduationCap,
+      color: 'text-blue-600 dark:text-blue-400',
+      bg: 'bg-blue-50 dark:bg-blue-900/20',
+      trend: 'Over 25 years',
+      clickable: true,
+      onClick: () => openPatientList('Graduated Patients', patients.filter(p => p.ltfuStatus === 'Graduated'))
+    },
+    {
+      label: 'Transferred Out',
+      value: transferredOutPatients.toString(),
+      icon: ArrowRightLeft,
+      color: 'text-orange-600 dark:text-orange-400',
+      bg: 'bg-orange-50 dark:bg-orange-900/20',
+      trend: 'Moved to other facility',
+      clickable: true,
+      onClick: () => openPatientList('Transferred Out Patients', patients.filter(p => p.ltfuStatus === 'Transferred Out'))
+    },
+    {
+      label: 'Deceased',
+      value: deadPatients.toString(),
+      icon: UserMinus,
+      color: 'text-slate-600 dark:text-slate-400',
+      bg: 'bg-slate-100 dark:bg-slate-800',
+      trend: 'Mortality',
+      clickable: true,
+      onClick: () => openPatientList('Deceased Patients', patients.filter(p => p.ltfuStatus === 'Dead'))
     },
     {
       label: 'Pending VL Entry',
@@ -341,6 +393,13 @@ export function Dashboard({ patients, appointments, visits, tracks = [] }: { pat
         isOpen={isPendingVLModalOpen}
         onClose={() => setIsPendingVLModalOpen(false)}
         patients={pendingVlPatients}
+      />
+
+      <PatientListModal
+        isOpen={listModalOpen}
+        onClose={() => setListModalOpen(false)}
+        title={listModalTitle}
+        patients={listModalPatients}
       />
     </div>
   );
