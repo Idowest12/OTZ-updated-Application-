@@ -183,7 +183,7 @@ export function Dashboard({ patients, appointments, visits, tracks = [] }: { pat
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-          Clinic Dashboard
+          OTZ DASHBOARD
         </h1>
         <p className="text-slate-500 dark:text-slate-400">
           Overview of clinic performance and patient tracking.

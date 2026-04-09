@@ -92,7 +92,7 @@ export default function App() {
               <Activity className="h-10 w-10" />
             </div>
             <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-              OTZ Clinic Management
+              OTZ CLUB
             </h1>
             <p className="mt-2 text-slate-500">
               Please sign in with your clinic credentials to access the system.
