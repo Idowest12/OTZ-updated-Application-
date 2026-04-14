@@ -17,7 +17,8 @@ import { PatientForm } from './components/PatientForm';
 import { VisitForm } from './components/VisitForm';
 import { PatientDetails } from './components/PatientDetails';
 import { TransferForm } from './components/TransferForm';
-import { Patient, Visit, CounselingTrack } from './types';
+import { AppointmentForm } from './components/AppointmentForm';
+import { Patient, Visit, CounselingTrack, Appointment } from './types';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from './contexts/AuthContext';
 import { Button } from './components/ui/Button';
@@ -31,6 +32,7 @@ import {
   addVisit, 
   subscribeToAppointments,
   updateAppointmentStatus,
+  addAppointment,
   subscribeToAllVisits,
   subscribeToCounselingTracks
 } from './services/firestoreService';
@@ -40,6 +42,7 @@ export default function App() {
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [isPatientModalOpen, setIsPatientModalOpen] = useState(false);
   const [isVisitModalOpen, setIsVisitModalOpen] = useState(false);
+  const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | undefined>();
@@ -130,6 +133,11 @@ export default function App() {
     setIsVisitModalOpen(true);
   };
 
+  const handleScheduleAppointment = (patient: Patient) => {
+    setSelectedPatient(patient);
+    setIsAppointmentModalOpen(true);
+  };
+
   const handleTransferOut = (patient: Patient) => {
     setSelectedPatient(patient);
     setIsTransferModalOpen(true);
@@ -210,6 +218,26 @@ export default function App() {
     }
   };
 
+  const handleAppointmentSubmit = async (date: string, type: 'Clinic Visit' | 'Counseling') => {
+    try {
+      if (selectedPatient?.id) {
+        await addAppointment({
+          patientId: selectedPatient.id,
+          patientName: `${selectedPatient.firstName} ${selectedPatient.lastName}`,
+          clinicNumber: selectedPatient.clinicNumber,
+          phone: selectedPatient.phone || '',
+          date,
+          type,
+          status: 'Pending'
+        });
+        await updatePatient(selectedPatient.id, { nextAppointmentDate: date });
+      }
+      setIsAppointmentModalOpen(false);
+    } catch (error) {
+      console.error('Error scheduling appointment:', error);
+    }
+  };
+
   const renderView = () => {
     switch (currentView) {
       case 'dashboard':
@@ -218,6 +246,7 @@ export default function App() {
         return (
           <PatientList
             patients={patients}
+            appointments={appointments}
             onAddPatient={handleAddPatient}
             onEditPatient={handleEditPatient}
             onViewDetails={handleViewDetails}
@@ -324,14 +353,34 @@ export default function App() {
         {selectedPatient && (
           <PatientDetails
             patient={selectedPatient}
+            appointments={appointments.filter(a => a.patientId === selectedPatient.id)}
             onClose={() => setIsDetailsModalOpen(false)}
             onEdit={handleEditPatient}
             onRecordVisit={(p) => {
               setIsDetailsModalOpen(false);
               handleRecordVisit(p);
             }}
+            onScheduleAppointment={(p) => {
+              setIsDetailsModalOpen(false);
+              handleScheduleAppointment(p);
+            }}
             onTransferOut={handleTransferOut}
             onActivate={handleActivate}
+          />
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={isAppointmentModalOpen}
+        onClose={() => setIsAppointmentModalOpen(false)}
+        title="Schedule Appointment"
+        size="md"
+      >
+        {selectedPatient && (
+          <AppointmentForm
+            patient={selectedPatient}
+            onSubmit={handleAppointmentSubmit}
+            onCancel={() => setIsAppointmentModalOpen(false)}
           />
         )}
       </Modal>

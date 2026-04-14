@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { useState } from 'react';
 import { Card } from '@/src/components/ui/Card';
 import { Button } from '@/src/components/ui/Button';
 import {
@@ -13,11 +14,24 @@ import {
   Users,
   Activity,
   AlertCircle,
+  FlaskConical
 } from 'lucide-react';
 import { Patient, Visit, CounselingTrack } from '@/src/types';
-import { format, parseISO, subDays, isBefore } from 'date-fns';
+import { format, parseISO, subDays, isBefore, subMonths } from 'date-fns';
 
 export function Reports({ patients, visits, tracks = [] }: { patients: Patient[], visits: Visit[], tracks?: CounselingTrack[] }) {
+  const [reportPeriod, setReportPeriod] = useState<string>('cumulative');
+
+  const monthOptions = [
+    { value: 'cumulative', label: 'Cumulative (All Time)' },
+    ...Array.from({ length: 12 }).map((_, i) => {
+      const d = subMonths(new Date(), i);
+      return {
+        value: format(d, 'yyyy-MM'),
+        label: format(d, 'MMMM yyyy')
+      };
+    })
+  ];
   const downloadCSV = (data: any[], filename: string) => {
     if (data.length === 0) return;
     
@@ -93,26 +107,51 @@ export function Reports({ patients, visits, tracks = [] }: { patients: Patient[]
     downloadCSV(reportData, `Counseling_Monthly_Status_${currentMonth}`);
   };
 
-  const generateMonthlyReport = () => {
-    const currentMonthVisits = visits.filter(v => {
-      const visitDate = parseISO(v.date);
-      const now = new Date();
-      return visitDate.getMonth() === now.getMonth() && visitDate.getFullYear() === now.getFullYear();
+  const generateVisitReport = () => {
+    const filteredVisits = visits.filter(v => {
+      if (reportPeriod === 'cumulative') return true;
+      return v.date.startsWith(reportPeriod);
     });
 
-    const reportData = currentMonthVisits.map(v => {
+    const reportData = filteredVisits.map(v => {
       const patient = patients.find(p => p.id === v.patientId);
       return {
         Date: v.date,
-        ClinicNumber: patient?.clinicNumber || 'N/A',
+        MH_NO: patient?.clinicNumber || 'N/A',
         PatientName: patient ? `${patient.firstName} ${patient.lastName}` : 'Unknown',
         VisitType: v.type,
-        VLResult: v.vlResult || '',
+        VLResult: v.vlResult !== undefined && v.vlResult !== null ? v.vlResult : '',
         Notes: v.notes || ''
       };
     });
 
-    downloadCSV(reportData, 'Monthly_Clinic_Report');
+    const filename = reportPeriod === 'cumulative' ? 'Cumulative_Clinic_Visits' : `Clinic_Visits_${reportPeriod}`;
+    downloadCSV(reportData, filename);
+  };
+
+  const generateVLTestReport = () => {
+    const filteredVisits = visits.filter(v => {
+      const hasTest = v.vlResult !== undefined && v.vlResult !== null;
+      if (!hasTest) return false;
+      if (reportPeriod === 'cumulative') return true;
+      return v.date.startsWith(reportPeriod);
+    });
+
+    const reportData = filteredVisits.map(v => {
+      const patient = patients.find(p => p.id === v.patientId);
+      return {
+        Date: v.date,
+        MH_NO: patient?.clinicNumber || 'N/A',
+        PatientName: patient ? `${patient.firstName} ${patient.lastName}` : 'Unknown',
+        Age: patient?.age || '',
+        Gender: patient?.gender || '',
+        VLResult: v.vlResult,
+        Suppressed: (v.vlResult as number) < 50 ? 'Yes' : 'No'
+      };
+    });
+
+    const filename = reportPeriod === 'cumulative' ? 'Cumulative_VL_Tests' : `VL_Tests_${reportPeriod}`;
+    downloadCSV(reportData, filename);
   };
 
   const generateLTFUReport = () => {
@@ -264,12 +303,20 @@ export function Reports({ patients, visits, tracks = [] }: { patients: Patient[]
       onDownload: generateDetailedCounselingReport
     },
     {
-      title: 'Monthly Clinic Report',
-      description: 'Comprehensive summary of visits, VL tests, and patient status for the current month.',
+      title: 'Clinic Visit Report',
+      description: 'Summary of patient visits based on the selected time period.',
       icon: FileText,
       color: 'text-indigo-600',
       bg: 'bg-indigo-50',
-      onDownload: generateMonthlyReport
+      onDownload: generateVisitReport
+    },
+    {
+      title: 'Viral Load Test Report',
+      description: 'List of patients who did a Viral Load test in the selected time period.',
+      icon: FlaskConical,
+      color: 'text-purple-600',
+      bg: 'bg-purple-50',
+      onDownload: generateVLTestReport
     },
     {
       title: 'Monthly Counselling Summary',
@@ -323,6 +370,18 @@ export function Reports({ patients, visits, tracks = [] }: { patients: Patient[]
           <p className="text-slate-500 dark:text-slate-400">
             Generate and export clinic data for analysis and reporting.
           </p>
+        </div>
+        <div className="flex items-center gap-3 bg-white dark:bg-slate-900 p-2 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <Calendar className="h-5 w-5 text-slate-400 ml-2" />
+          <select
+            className="bg-transparent border-none text-sm font-medium text-slate-700 dark:text-slate-300 focus:ring-0 cursor-pointer pr-8"
+            value={reportPeriod}
+            onChange={(e) => setReportPeriod(e.target.value)}
+          >
+            {monthOptions.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
         </div>
       </div>
 

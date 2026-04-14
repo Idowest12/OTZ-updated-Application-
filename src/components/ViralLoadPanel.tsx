@@ -76,7 +76,7 @@ export function ViralLoadPanel() {
                       {patient.firstName} {patient.lastName}
                     </p>
                     <p className="text-xs text-slate-500">
-                      Clinic No: {patient.clinicNumber} • Ordered: {formatDate(patient.lastVlDate)}
+                      MH NO: {patient.clinicNumber} • Ordered: {formatDate(patient.lastVlDate)}
                     </p>
                   </div>
                 </div>

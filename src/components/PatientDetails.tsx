@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Patient, Visit } from '../types';
+import { Patient, Visit, Appointment } from '../types';
 import { formatDate, cn } from '../utils';
 import { Card } from './ui/Card';
 import { Button } from './ui/Button';
@@ -26,14 +26,16 @@ import {
 
 interface PatientDetailsProps {
   patient: Patient;
+  appointments?: Appointment[];
   onClose: () => void;
   onEdit: (patient: Patient) => void;
   onRecordVisit: (patient: Patient) => void;
+  onScheduleAppointment?: (patient: Patient) => void;
   onTransferOut: (patient: Patient) => void;
   onActivate: (patient: Patient) => void;
 }
 
-export function PatientDetails({ patient, onClose, onEdit, onRecordVisit, onTransferOut, onActivate }: PatientDetailsProps) {
+export function PatientDetails({ patient, appointments = [], onClose, onEdit, onRecordVisit, onScheduleAppointment, onTransferOut, onActivate }: PatientDetailsProps) {
   const { isAdmin } = useAuth();
   const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,7 +74,7 @@ export function PatientDetails({ patient, onClose, onEdit, onRecordVisit, onTran
                   {patient.firstName} {patient.lastName}
                 </h2>
                 <p className="text-sm font-medium text-slate-500">
-                  Clinic No: {patient.clinicNumber}
+                  MH NO: {patient.clinicNumber}
                 </p>
               </div>
             </div>
@@ -86,6 +88,11 @@ export function PatientDetails({ patient, onClose, onEdit, onRecordVisit, onTran
               >
                 Edit Profile
               </Button>
+              {onScheduleAppointment && (
+                <Button variant="outline" size="sm" onClick={() => onScheduleAppointment(patient)}>
+                  Schedule Appointment
+                </Button>
+              )}
               <Button size="sm" onClick={() => onRecordVisit(patient)}>
                 Record Visit
               </Button>
@@ -125,7 +132,7 @@ export function PatientDetails({ patient, onClose, onEdit, onRecordVisit, onTran
                 <Clock className="h-5 w-5 text-slate-400" />
               </div>
               <div>
-                <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Enrolled Since</p>
+                <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">OTZ Enrollment Date</p>
                 <p className="font-medium">{formatDate(patient.enrollmentDate)}</p>
               </div>
             </div>
@@ -137,7 +144,7 @@ export function PatientDetails({ patient, onClose, onEdit, onRecordVisit, onTran
             <h3 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-400">Current Status</h3>
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-slate-600">Clinic Status</span>
+                <span className="text-sm text-slate-600">ART STATUS</span>
                 <span className={cn(
                   "rounded-full px-2.5 py-0.5 text-xs font-bold",
                   patient.ltfuStatus === 'Active' ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
@@ -194,6 +201,50 @@ export function PatientDetails({ patient, onClose, onEdit, onRecordVisit, onTran
       </div>
 
       {/* History Section */}
+      {appointments.length > 0 && (
+        <Card className="p-0 overflow-hidden">
+          <div className="flex items-center gap-2 border-b border-slate-100 p-6 bg-indigo-50/50">
+            <Calendar className="h-5 w-5 text-indigo-600" />
+            <h3 className="text-lg font-bold text-slate-900">Upcoming Appointments</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <tr>
+                  <th className="px-6 py-4">Date</th>
+                  <th className="px-6 py-4">Type</th>
+                  <th className="px-6 py-4">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {appointments.map((apt) => (
+                  <tr key={apt.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="whitespace-nowrap px-6 py-4 font-medium text-slate-900">
+                      {formatDate(apt.date)}
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4">
+                      <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700">
+                        {apt.type || 'Clinic Visit'}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4">
+                      <span className={cn(
+                        "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium",
+                        apt.status === 'Completed' ? "bg-emerald-50 text-emerald-700" :
+                        apt.status === 'Missed' ? "bg-rose-50 text-rose-700" :
+                        "bg-amber-50 text-amber-700"
+                      )}>
+                        {apt.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
       <Card className="p-0 overflow-hidden">
         <div className="flex items-center gap-2 border-b border-slate-100 p-6">
           <History className="h-5 w-5 text-indigo-600" />
@@ -207,14 +258,13 @@ export function PatientDetails({ patient, onClose, onEdit, onRecordVisit, onTran
                 <th className="px-6 py-4">Date</th>
                 <th className="px-6 py-4">Visit Type</th>
                 <th className="px-6 py-4">VL Result</th>
-                <th className="px-6 py-4">Next Appointment</th>
                 <th className="px-6 py-4">Notes</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
+                  <td colSpan={4} className="px-6 py-12 text-center text-slate-400">
                     <div className="flex flex-col items-center gap-2">
                       <div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
                       Loading history...
@@ -223,7 +273,7 @@ export function PatientDetails({ patient, onClose, onEdit, onRecordVisit, onTran
                 </tr>
               ) : visits.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
+                  <td colSpan={4} className="px-6 py-12 text-center text-slate-400">
                     <div className="flex flex-col items-center gap-2">
                       <FileText className="h-8 w-8 opacity-20" />
                       No clinical history found for this patient.
@@ -252,9 +302,6 @@ export function PatientDetails({ patient, onClose, onEdit, onRecordVisit, onTran
                       ) : (
                         <span className="text-slate-400">—</span>
                       )}
-                    </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-slate-600">
-                      {formatDate(visit.nextAppointmentDate)}
                     </td>
                     <td className="px-6 py-4 text-slate-500 max-w-xs truncate">
                       {visit.notes || '—'}

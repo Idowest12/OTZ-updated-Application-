@@ -6,7 +6,7 @@
 import { Card } from '@/src/components/ui/Card';
 import { Input } from '@/src/components/ui/Input';
 import { Button } from '@/src/components/ui/Button';
-import { Patient } from '@/src/types';
+import { Patient, Appointment } from '@/src/types';
 import { formatDate, cn } from '@/src/utils';
 import {
   Search,
@@ -28,6 +28,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 interface PatientListProps {
   patients: Patient[];
+  appointments?: Appointment[];
   onAddPatient: () => void;
   onEditPatient: (patient: Patient) => void;
   onViewDetails: (patient: Patient) => void;
@@ -40,6 +41,7 @@ interface PatientListProps {
 
 export function PatientList({ 
   patients, 
+  appointments = [],
   onAddPatient, 
   onEditPatient, 
   onViewDetails,
@@ -65,6 +67,19 @@ export function PatientList({
     return diffInHours <= 48;
   };
 
+  const getNextAppointment = (patientId: string, patientNextAppt?: string) => {
+    // Find the earliest pending appointment for this patient
+    const pendingAppts = appointments
+      .filter(a => a.patientId === patientId && a.status === 'Pending')
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+    if (pendingAppts.length > 0) {
+      return pendingAppts[0].date;
+    }
+    
+    return patientNextAppt;
+  };
+
   const filteredPatients = patients.filter((p) => {
     const matchesSearch =
       p.firstName.toLowerCase().includes(search.toLowerCase()) ||
@@ -88,7 +103,7 @@ export function PatientList({
   };
 
   const downloadTemplate = () => {
-    const headers = ['Clinic No', 'First Name', 'Last Name', 'Phone', 'Age', 'Gender', 'Address', 'Enrollment Date', 'Status'];
+    const headers = ['MH NO', 'First Name', 'Last Name', 'Phone', 'Age', 'Gender', 'Address', 'OTZ Enrollment Date', 'ART STATUS'];
     const sampleData = [
       ['OTZ-001', 'John', 'Doe', '08012345678', '24', 'Male', '123 Clinic St', '2023-01-15', 'Active'],
       ['OTZ-002', 'Jane', 'Smith', '09087654321', '19', 'Female', '456 Hospital Rd', '2023-02-20', 'Active']
@@ -163,7 +178,7 @@ export function PatientList({
 
         if (headerRowIndex === -1) {
           const firstRowPreview = rows[0]?.slice(0, 5).map(c => String(c || 'empty')).join(', ') || 'empty';
-          throw new Error(`Could not find a header row. \n\nI checked the first 20 rows but didn't see columns like "Clinic No", "Name", "Phone", or "Age". \n\nRow 1 looks like: [${firstRowPreview}]. \n\nPlease ensure your headers are in the first few rows.`);
+          throw new Error(`Could not find a header row. \n\nI checked the first 20 rows but didn't see columns like "MH NO", "Name", "Phone", or "Age". \n\nRow 1 looks like: [${firstRowPreview}]. \n\nPlease ensure your headers are in the first few rows.`);
         }
 
         const headers = rows[headerRowIndex].map(h => String(h || '').trim());
@@ -189,7 +204,7 @@ export function PatientList({
         };
 
         const colMap = {
-          clinicNumber: findColIndex(['clinicNumber', 'clinicno', 'id', 'patientid', 'number', 'clinic', 'patientno']),
+          clinicNumber: findColIndex(['clinicNumber', 'clinicno', 'mhno', 'mh no', 'id', 'patientid', 'number', 'clinic', 'patientno']),
           firstName: findColIndex(['firstName', 'first', 'fname', 'givenname']),
           lastName: findColIndex(['lastName', 'last', 'lname', 'surname', 'familyname']),
           fullName: findColIndex(['name', 'fullname', 'patientname', 'names']),
@@ -197,9 +212,9 @@ export function PatientList({
           gender: findColIndex(['gender', 'sex']),
           phone: findColIndex(['phone', 'telephone', 'mobile', 'contact', 'cell', 'phoneno', 'phonenumber']),
           address: findColIndex(['address', 'location', 'residence', 'home']),
-          enrollmentDate: findColIndex(['enrollmentDate', 'enrolled', 'dateenrolled', 'startdate', 'regdate']),
+          enrollmentDate: findColIndex(['enrollmentDate', 'otzenrollmentdate', 'otz enrollment date', 'enrolled', 'dateenrolled', 'startdate', 'regdate']),
           dateOfBirth: findColIndex(['dateOfBirth', 'dob', 'birthdate']),
-          ltfuStatus: findColIndex(['ltfuStatus', 'status', 'currentstatus']),
+          ltfuStatus: findColIndex(['ltfuStatus', 'artstatus', 'art status', 'status', 'currentstatus']),
         };
 
         console.log('Column Mapping Results:', colMap);
@@ -455,7 +470,7 @@ export function PatientList({
           </Button>
           <Button variant="outline" size="sm" className="gap-2" onClick={() => {
             const csvContent = [
-              ['Clinic No', 'First Name', 'Last Name', 'Phone', 'Age', 'Gender', 'Status', 'Last Visit', 'VL Status'].join(','),
+              ['MH NO', 'First Name', 'Last Name', 'Phone', 'Age', 'Gender', 'ART STATUS', 'Last Visit', 'Next Appointment', 'VL Status'].join(','),
               ...patients.map(p => [
                 p.clinicNumber,
                 p.firstName,
@@ -465,6 +480,7 @@ export function PatientList({
                 p.gender,
                 p.ltfuStatus,
                 p.lastVisitDate || 'N/A',
+                getNextAppointment(p.id!, p.nextAppointmentDate) || 'N/A',
                 p.vlSuppressed ? 'Suppressed' : 'Unsuppressed'
               ].join(','))
             ].join('\n');
@@ -519,12 +535,13 @@ export function PatientList({
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-6 py-4">Clinic No.</th>
+                <th className="px-6 py-4">MH NO</th>
                 <th className="px-6 py-4">Patient Name</th>
                 <th className="px-6 py-4">Phone</th>
                 <th className="px-6 py-4">Age/Gender</th>
-                <th className="px-6 py-4">Status</th>
+                <th className="px-6 py-4">ART STATUS</th>
                 <th className="px-6 py-4">Last Visit</th>
+                <th className="px-6 py-4">Next Appt</th>
                 <th className="px-6 py-4">VL Status</th>
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
@@ -584,6 +601,9 @@ export function PatientList({
                   </td>
                   <td className="whitespace-nowrap px-6 py-4 text-slate-600">
                     {formatDate(patient.lastVisitDate)}
+                  </td>
+                  <td className="whitespace-nowrap px-6 py-4 text-slate-600">
+                    {formatDate(getNextAppointment(patient.id!, patient.nextAppointmentDate))}
                   </td>
                   <td className="whitespace-nowrap px-6 py-4">
                     {patient.vlSuppressed !== undefined ? (

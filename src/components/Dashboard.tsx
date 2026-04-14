@@ -284,6 +284,14 @@ export function Dashboard({ patients, appointments, visits, tracks = [] }: { pat
                   outerRadius={100}
                   paddingAngle={5}
                   dataKey="value"
+                  onClick={(data) => {
+                    if (data.name === 'Suppressed') {
+                      openPatientList('Suppressed Patients', patients.filter(p => p.vlSuppressed === true));
+                    } else if (data.name === 'Not Suppressed') {
+                      openPatientList('Unsuppressed Patients', patients.filter(p => p.vlSuppressed === false));
+                    }
+                  }}
+                  className="cursor-pointer"
                 >
                   {vlStatusData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -300,7 +308,17 @@ export function Dashboard({ patients, appointments, visits, tracks = [] }: { pat
             </ResponsiveContainer>
             <div className="space-y-3 pr-8">
               {vlStatusData.map((item, index) => (
-                <div key={item.name} className="flex items-center gap-3">
+                <div 
+                  key={item.name} 
+                  className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => {
+                    if (item.name === 'Suppressed') {
+                      openPatientList('Suppressed Patients', patients.filter(p => p.vlSuppressed === true));
+                    } else if (item.name === 'Not Suppressed') {
+                      openPatientList('Unsuppressed Patients', patients.filter(p => p.vlSuppressed === false));
+                    }
+                  }}
+                >
                   <div
                     className="h-3 w-3 rounded-full"
                     style={{ backgroundColor: COLORS[index % COLORS.length] }}

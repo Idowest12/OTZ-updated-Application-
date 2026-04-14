@@ -353,7 +353,7 @@ export function ViralLoadManager({ patients, tracks, onRecordVl }: ViralLoadMana
               >
                 <div>
                   <p className="font-bold text-slate-900">{patient.firstName} {patient.lastName}</p>
-                  <p className="text-xs text-slate-500">Clinic No: {patient.clinicNumber}</p>
+                  <p className="text-xs text-slate-500">MH NO: {patient.clinicNumber}</p>
                 </div>
                 <ChevronRight className="h-4 w-4 text-slate-400" />
               </button>

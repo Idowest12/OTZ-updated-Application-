@@ -124,7 +124,7 @@ export function AppointmentCalendar({ appointments, onUpdateStatus }: Appointmen
                         )}
                       </div>
                       <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                        <span>Clinic No: {appointment.clinicNumber}</span>
+                        <span>MH NO: {appointment.clinicNumber}</span>
                         {appointment.phone && (
                           <div className="flex items-center gap-3 mt-1">
                             <span className="flex items-center gap-1 text-indigo-600 dark:text-indigo-400 font-medium">

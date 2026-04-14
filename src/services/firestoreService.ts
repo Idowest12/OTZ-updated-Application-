@@ -442,14 +442,17 @@ export async function addVisit(patientId: string, visit: any) {
     await setDoc(newDocRef, { ...visit, patientId, createdAt: Timestamp.now() });
     
     // Update patient's last visit date and status
-    const vlSuppressed = visit.vlResult !== undefined ? visit.vlResult < 50 : undefined;
     const patientUpdate: any = {
       lastVisitDate: visit.date,
       nextAppointmentDate: visit.nextAppointmentDate || null,
-      vlSuppressed,
-      lastVlDate: visit.vlResult !== undefined ? visit.date : undefined,
-      lastVlResult: visit.vlResult !== undefined ? visit.vlResult : undefined,
     };
+    
+    if (visit.vlResult !== undefined && visit.vlResult !== null) {
+      patientUpdate.vlSuppressed = visit.vlResult < 50;
+      patientUpdate.lastVlDate = visit.date;
+      patientUpdate.lastVlResult = visit.vlResult;
+    }
+    
     if (visit.nextCounselingDate) {
       patientUpdate.nextCounselingDate = visit.nextCounselingDate;
     }

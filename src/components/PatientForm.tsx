@@ -54,14 +54,14 @@ export function PatientForm({ patient, onSubmit, onCancel }: PatientFormProps) {
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Input
-          label="Clinic Number"
+          label="MH NO"
           required
           value={formData.clinicNumber}
           onChange={(e) => setFormData({ ...formData, clinicNumber: e.target.value })}
           placeholder="e.g. OTZ-001"
         />
         <Input
-          label="Enrollment Date"
+          label="OTZ Enrollment Date"
           type="date"
           required
           value={formData.enrollmentDate}
@@ -131,7 +131,7 @@ export function PatientForm({ patient, onSubmit, onCancel }: PatientFormProps) {
           placeholder="Residential Address"
         />
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-slate-700">LTFU Status</label>
+          <label className="text-sm font-medium text-slate-700">ART STATUS</label>
           <select
             className="flex h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
             value={formData.ltfuStatus}
