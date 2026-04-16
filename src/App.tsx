@@ -101,9 +101,29 @@ export default function App() {
               Please sign in with your clinic credentials to access the system.
             </p>
           </div>
-          <Button onClick={login} className="w-full py-6 text-lg" size="lg">
-            Sign in with Google
-          </Button>
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            const form = e.target as HTMLFormElement;
+            const email = (form.elements.namedItem('email') as HTMLInputElement).value;
+            const password = (form.elements.namedItem('password') as HTMLInputElement).value;
+            try {
+              await login(email, password);
+            } catch (err) {
+              alert('Invalid credentials');
+            }
+          }} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700">Email</label>
+              <input name="email" type="email" required defaultValue="admin@local.com" className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700">Password</label>
+              <input name="password" type="password" required defaultValue="admin123" className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm" />
+            </div>
+            <Button type="submit" className="w-full py-6 text-lg" size="lg">
+              Sign In
+            </Button>
+          </form>
           <div className="text-center text-xs text-slate-400">
             Secure access for authorized clinic staff only.
           </div>

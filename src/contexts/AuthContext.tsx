@@ -1,78 +1,77 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../firebase';
-import { saveUserProfile } from '../services/firestoreService';
+
+interface User {
+  uid: string;
+  email: string;
+  displayName: string;
+  role: string;
+}
 
 interface AuthContextType {
   user: User | null;
   isAdmin: boolean;
   loading: boolean;
-  login: () => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const ADMIN_EMAILS = ["idowutosin70@gmail.com", "idowu6259@gmail.com"];
-
-export function FirebaseProvider({ children }: { children: React.ReactNode }) {
+export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setUser(user);
-      
-      if (user) {
-        // Check if user is in the hardcoded admin list
-        const isHardcodedAdmin = ADMIN_EMAILS.includes(user.email || "");
-        
-        // Save/update user profile in Firestore
-        await saveUserProfile(user, isHardcodedAdmin ? 'admin' : 'staff');
-        
-        // Get their actual role from Firestore
+    const checkAuth = async () => {
+      const token = localStorage.getItem('token');
+      if (token) {
         try {
-          const userDoc = await getDoc(doc(db, 'users', user.uid));
-          if (userDoc.exists() && userDoc.data().role === 'admin') {
-            setIsAdmin(true);
+          const res = await fetch('/api/auth/me', {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setUser(data.user);
+            setIsAdmin(data.user.role === 'admin');
           } else {
-            setIsAdmin(isHardcodedAdmin); // Fallback to hardcoded list
+            localStorage.removeItem('token');
           }
-        } catch (error) {
-          console.error("Error fetching user role:", error);
-          setIsAdmin(isHardcodedAdmin);
+        } catch (err) {
+          console.error(err);
+          localStorage.removeItem('token');
         }
-      } else {
-        setIsAdmin(false);
       }
-      
       setLoading(false);
-    });
-    return () => unsubscribe();
+    };
+    checkAuth();
   }, []);
 
-  const login = async () => {
-    const provider = new GoogleAuthProvider();
+  const login = async (email: string, password: string) => {
     try {
-      await signInWithPopup(auth, provider);
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        localStorage.setItem('token', data.token);
+        setUser(data.user);
+        setIsAdmin(data.user.role === 'admin');
+      } else {
+        throw new Error('Invalid credentials');
+      }
     } catch (error) {
       console.error('Login error:', error);
+      throw error;
     }
   };
 
   const logout = async () => {
-    try {
-      await signOut(auth);
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
+    localStorage.removeItem('token');
+    setUser(null);
+    setIsAdmin(false);
   };
 
   return (
@@ -85,7 +84,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within a FirebaseProvider');
+    throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
 }

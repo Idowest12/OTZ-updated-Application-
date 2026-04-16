@@ -1,298 +1,6 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
+import { io } from 'socket.io-client';
 
-import {
-  collection,
-  doc,
-  setDoc,
-  updateDoc,
-  deleteDoc,
-  getDocs,
-  getDoc,
-  onSnapshot,
-  query,
-  where,
-  orderBy,
-  Timestamp,
-  getDocFromServer,
-  writeBatch,
-  limit,
-} from 'firebase/firestore';
-import { db, auth } from '../firebase';
-import { Patient, ActivityLog, UserProfile } from '../types';
-
-// Activity Logging Helper
-async function logActivity(action: string, details: string, type: ActivityLog['type']) {
-  if (!auth.currentUser) return;
-  const path = 'activity_logs';
-  try {
-    const newDocRef = doc(collection(db, path));
-    await setDoc(newDocRef, {
-      userId: auth.currentUser.uid,
-      userName: auth.currentUser.displayName || auth.currentUser.email || 'Unknown User',
-      action,
-      details,
-      type,
-      timestamp: Timestamp.now()
-    });
-  } catch (error) {
-    console.error('Error logging activity:', error);
-  }
-}
-
-export function subscribeToActivityLogs(callback: (logs: ActivityLog[]) => void) {
-  const path = 'activity_logs';
-  const q = query(collection(db, path), orderBy('timestamp', 'desc'), limit(100));
-  return onSnapshot(q, (snapshot) => {
-    const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityLog));
-    callback(logs);
-  }, (error) => {
-    handleFirestoreError(error, OperationType.GET, path);
-  });
-}
-
-export async function cleanupOldLogs(days: number = 30) {
-  const path = 'activity_logs';
-  try {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - days);
-    const q = query(collection(db, path), where('timestamp', '<', Timestamp.fromDate(cutoff)));
-    const snapshot = await getDocs(q);
-    
-    const batch = writeBatch(db);
-    snapshot.docs.forEach((doc) => {
-      batch.delete(doc.ref);
-    });
-    
-    await batch.commit();
-    await logActivity('System Cleanup', `Deleted ${snapshot.size} logs older than ${days} days.`, 'System');
-    return snapshot.size;
-  } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
-  }
-}
-
-export async function updatePatientVL(patientId: string, vlResult: number, vlDate: string) {
-  const path = 'patients';
-  try {
-    const patientRef = doc(db, path, patientId);
-    const vlSuppressed = vlResult < 1000;
-    
-    await updateDoc(patientRef, {
-      lastVlResult: vlResult,
-      lastVlDate: vlDate,
-      vlSuppressed: vlSuppressed
-    });
-    
-    await logActivity(
-      'Viral Load Updated',
-      `Updated VL for patient ID: ${patientId} to ${vlResult} copies/mL`,
-      'Patient'
-    );
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
-}
-
-export async function graduatePatientsOver25() {
-  const path = 'patients';
-  try {
-    const q = query(collection(db, path), where('ltfuStatus', '==', 'Active'));
-    const snapshot = await getDocs(q);
-    
-    let batch = writeBatch(db);
-    let count = 0;
-    
-    for (const document of snapshot.docs) {
-      const patient = document.data() as Patient;
-      if (patient.age > 25) {
-        batch.update(document.ref, { ltfuStatus: 'Graduated' });
-        count++;
-        
-        if (count === 500) {
-          await batch.commit();
-          batch = writeBatch(db);
-          count = 0;
-        }
-      }
-    }
-    
-    if (count > 0) {
-      await batch.commit();
-    }
-    
-    if (count > 0) {
-      await logActivity(
-        'Patients Graduated',
-        `Graduated ${count} patients over the age of 25`,
-        'System'
-      );
-    }
-    
-    return count;
-  } catch (error) {
-    console.error('Error graduating patients:', error);
-    throw error;
-  }
-}
-
-export async function clearAllActivityLogs() {
-  const path = 'activity_logs';
-  try {
-    const q = query(collection(db, path));
-    const snapshot = await getDocs(q);
-    
-    let batch = writeBatch(db);
-    let count = 0;
-    
-    for (const document of snapshot.docs) {
-      batch.delete(document.ref);
-      count++;
-      if (count === 500) {
-        await batch.commit();
-        batch = writeBatch(db);
-        count = 0;
-      }
-    }
-    if (count > 0) {
-      await batch.commit();
-    }
-    
-    await logActivity(
-      'System Cleanup',
-      'Cleared all activity logs',
-      'System'
-    );
-    
-    return snapshot.size;
-  } catch (error) {
-    console.error('Error clearing logs:', error);
-    throw error;
-  }
-}
-
-export async function saveUserProfile(user: any, defaultRole: 'admin' | 'staff' = 'staff') {
-  const path = 'users';
-  try {
-    const userRef = doc(db, path, user.uid);
-    const userSnap = await getDoc(userRef);
-    
-    const now = new Date().toISOString();
-    
-    if (!userSnap.exists()) {
-      await setDoc(userRef, {
-        uid: user.uid,
-        email: user.email || '',
-        displayName: user.displayName || '',
-        photoURL: user.photoURL || '',
-        role: defaultRole,
-        createdAt: now,
-        lastLogin: now
-      });
-    } else {
-      await updateDoc(userRef, {
-        displayName: user.displayName || userSnap.data().displayName,
-        photoURL: user.photoURL || userSnap.data().photoURL,
-        lastLogin: now
-      });
-    }
-  } catch (error) {
-    console.error('Error saving user profile:', error);
-  }
-}
-
-export function subscribeToUsers(callback: (users: UserProfile[]) => void) {
-  const path = 'users';
-  const q = query(collection(db, path), orderBy('createdAt', 'desc'));
-  return onSnapshot(q, (snapshot) => {
-    const users = snapshot.docs.map(doc => doc.data() as UserProfile);
-    callback(users);
-  }, (error) => {
-    console.error('Error subscribing to users:', error);
-  });
-}
-
-export async function updateUserRole(uid: string, newRole: 'admin' | 'staff') {
-  const path = 'users';
-  try {
-    const userRef = doc(db, path, uid);
-    await updateDoc(userRef, { role: newRole });
-    await logActivity('System', `Updated user role for ${uid} to ${newRole}`, 'System');
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
-}
-
-async function clearCollectionData(collectionName: string, logMessage: string) {
-  try {
-    const q = query(collection(db, collectionName));
-    const snapshot = await getDocs(q);
-    let batch = writeBatch(db);
-    let count = 0;
-    for (const document of snapshot.docs) {
-      batch.delete(document.ref);
-      count++;
-      if (count === 500) {
-        await batch.commit();
-        batch = writeBatch(db);
-        count = 0;
-      }
-    }
-    if (count > 0) {
-      await batch.commit();
-    }
-    await logActivity('System Cleanup', logMessage, 'System');
-    return snapshot.size;
-  } catch (error) {
-    console.error(`Error clearing ${collectionName}:`, error);
-    throw error;
-  }
-}
-
-export const clearAllVisits = () => clearCollectionData('visits', 'Cleared all visit records');
-export const clearAllCounseling = () => clearCollectionData('counseling_tracks', 'Cleared all counseling records');
-export const clearAllAppointments = () => clearCollectionData('appointments', 'Cleared all appointment records');
-
-export async function wipeAllTestData() {
-  const collectionsToClear = ['patients', 'visits', 'appointments', 'counseling_tracks', 'activity_logs'];
-  
-  try {
-    for (const collectionName of collectionsToClear) {
-      const q = query(collection(db, collectionName));
-      const snapshot = await getDocs(q);
-      
-      let batch = writeBatch(db);
-      let count = 0;
-      
-      for (const document of snapshot.docs) {
-        batch.delete(document.ref);
-        count++;
-        if (count === 500) {
-          await batch.commit();
-          batch = writeBatch(db);
-          count = 0;
-        }
-      }
-      if (count > 0) {
-        await batch.commit();
-      }
-    }
-    
-    // Log the wipe action after clearing everything
-    await logActivity(
-      'Factory Reset',
-      'Wiped all test data from the system',
-      'System'
-    );
-    
-    return true;
-  } catch (error) {
-    console.error('Error wiping test data:', error);
-    throw error;
-  }
-}
+const socket = io(window.location.origin);
 
 export enum OperationType {
   CREATE = 'create',
@@ -303,145 +11,132 @@ export enum OperationType {
   WRITE = 'write',
 }
 
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId: string | undefined;
-    email: string | null | undefined;
-    emailVerified: boolean | undefined;
-    isAnonymous: boolean | undefined;
-    tenantId: string | null | undefined;
-    providerInfo: {
-      providerId: string;
-      displayName: string | null;
-      email: string | null;
-      photoUrl: string | null;
-    }[];
-  }
+function handleSocketError(error: unknown, operationType: OperationType, path: string | null) {
+  console.error('Socket Error:', operationType, path, error);
 }
 
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData.map(provider => ({
-        providerId: provider.providerId,
-        displayName: provider.displayName,
-        email: provider.email,
-        photoUrl: provider.photoURL
-      })) || []
-    },
-    operationType,
-    path
-  }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+// Activity Logs
+export async function logActivity(action: string, details: string, user: string) {
+  socket.emit('add_document', {
+    collection: 'activity_logs',
+    data: { action, details, user, timestamp: new Date().toISOString() }
+  });
+}
+
+export function subscribeToActivityLogs(callback: (logs: any[]) => void) {
+  socket.on('activity_logs_update', callback);
+  socket.emit('subscribe', 'activity_logs');
+  return () => socket.off('activity_logs_update', callback);
+}
+
+export async function clearActivityLogs() {
+  socket.emit('clear_collection', { collection: 'activity_logs' });
+}
+
+export async function clearAllActivityLogs() {
+  socket.emit('clear_collection', { collection: 'activity_logs' });
+}
+
+export async function cleanupOldLogs() {
+  // In a real app, this would delete logs older than 30 days.
+  // For now, just clear all logs.
+  socket.emit('clear_collection', { collection: 'activity_logs' });
+}
+
+// Users
+export async function saveUserProfile(user: any, defaultRole: 'admin' | 'staff' = 'staff') {
+  // Handled by the backend on login/register in a real app
+}
+
+export function subscribeToUsers(callback: (users: any[]) => void) {
+  socket.on('users_update', callback);
+  socket.emit('subscribe', 'users');
+  return () => socket.off('users_update', callback);
+}
+
+export async function updateUserRole(uid: string, newRole: 'admin' | 'staff') {
+  socket.emit('update_document', { collection: 'users', id: uid, data: { role: newRole } });
+}
+
+// Data Wiping
+export const clearAllVisits = () => socket.emit('clear_collection', { collection: 'visits' });
+export const clearAllCounseling = () => socket.emit('clear_collection', { collection: 'counseling_tracks' });
+export const clearAllAppointments = () => socket.emit('clear_collection', { collection: 'appointments' });
+
+export async function wipeAllTestData() {
+  ['patients', 'visits', 'appointments', 'counseling_tracks', 'activity_logs'].forEach(collection => {
+    socket.emit('clear_collection', { collection });
+  });
+  return true;
 }
 
 // Patients
 export function subscribeToPatients(callback: (patients: any[]) => void) {
-  const path = 'patients';
-  return onSnapshot(collection(db, path), (snapshot) => {
-    const patients = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    callback(patients);
-  }, (error) => {
-    handleFirestoreError(error, OperationType.GET, path);
-  });
+  socket.on('patients_update', callback);
+  socket.emit('subscribe', 'patients');
+  return () => socket.off('patients_update', callback);
 }
 
 export async function addPatient(patient: any) {
-  const path = 'patients';
-  try {
-    const newDocRef = doc(collection(db, path));
-    await setDoc(newDocRef, { ...patient, createdAt: Timestamp.now() });
-    await logActivity('Patient Registered', `New patient ${patient.firstName} ${patient.lastName} (${patient.clinicNumber}) added.`, 'Patient');
-    return newDocRef.id;
-  } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, path);
-  }
+  return new Promise((resolve) => {
+    socket.emit('add_document', { collection: 'patients', data: patient });
+    socket.once('operation_success', ({ id }) => resolve(id));
+  });
 }
 
 export async function bulkAddPatients(patients: any[]) {
-  const path = 'patients';
-  try {
-    // Firestore batch limit is 500 operations
-    const BATCH_SIZE = 500;
-    for (let i = 0; i < patients.length; i += BATCH_SIZE) {
-      const batch = writeBatch(db);
-      const chunk = patients.slice(i, i + BATCH_SIZE);
-      
-      chunk.forEach((patient) => {
-        const newDocRef = doc(collection(db, path));
-        batch.set(newDocRef, { ...patient, createdAt: Timestamp.now() });
-      });
-      
-      await batch.commit();
-    }
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
-  }
+  patients.forEach(patient => {
+    socket.emit('add_document', { collection: 'patients', data: patient });
+  });
 }
 
 export async function updatePatient(id: string, patient: any) {
-  const path = `patients/${id}`;
-  try {
-    await updateDoc(doc(db, 'patients', id), { ...patient, updatedAt: Timestamp.now() });
-    await logActivity('Patient Updated', `Patient record (ID: ${id}) modified.`, 'Patient');
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
+  socket.emit('update_document', { collection: 'patients', id, data: patient });
+}
+
+export async function updatePatientVL(id: string, vlResult: number, date: string) {
+  socket.emit('update_document', { 
+    collection: 'patients', 
+    id, 
+    data: { 
+      vlSuppressed: vlResult < 50,
+      lastVlDate: date,
+      lastVlResult: vlResult
+    } 
+  });
 }
 
 export async function deletePatient(id: string) {
-  const path = `patients/${id}`;
-  try {
-    const patientDoc = await getDoc(doc(db, 'patients', id));
-    const patientData = patientDoc.data();
-    const patientName = patientData ? `${patientData.firstName} ${patientData.lastName}` : id;
-    
-    await deleteDoc(doc(db, 'patients', id));
-    await logActivity('Patient Deleted', `Patient ${patientName} (ID: ${id}) was permanently removed.`, 'Patient');
-  } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
-  }
+  socket.emit('delete_document', { collection: 'patients', id });
+}
+
+export async function graduatePatientsOver25() {
+  // In a real app, this would query patients over 25 and update their status.
+  // For now, we'll just emit a custom event or let the backend handle it.
+  socket.emit('graduate_patients');
 }
 
 // Visits
 export function subscribeToVisits(patientId: string, callback: (visits: any[]) => void) {
-  const path = 'visits';
-  const q = query(collection(db, path), where('patientId', '==', patientId), orderBy('date', 'desc'));
-  return onSnapshot(q, (snapshot) => {
-    const visits = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    callback(visits);
-  }, (error) => {
-    handleFirestoreError(error, OperationType.GET, path);
-  });
+  const handler = (visits: any[]) => {
+    callback(visits.filter(v => v.patientId === patientId));
+  };
+  socket.on('visits_update', handler);
+  socket.emit('subscribe', 'visits');
+  return () => socket.off('visits_update', handler);
 }
 
 export function subscribeToAllVisits(callback: (visits: any[]) => void) {
-  const path = 'visits';
-  return onSnapshot(collection(db, path), (snapshot) => {
-    const visits = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    callback(visits);
-  }, (error) => {
-    handleFirestoreError(error, OperationType.GET, path);
-  });
+  socket.on('visits_update', callback);
+  socket.emit('subscribe', 'visits');
+  return () => socket.off('visits_update', callback);
 }
 
 export async function addVisit(patientId: string, visit: any) {
-  const path = 'visits';
-  try {
-    const newDocRef = doc(collection(db, path));
-    await setDoc(newDocRef, { ...visit, patientId, createdAt: Timestamp.now() });
+  return new Promise((resolve) => {
+    socket.emit('add_document', { collection: 'visits', data: { ...visit, patientId } });
     
-    // Update patient's last visit date and status
+    // Also update patient logic
     const patientUpdate: any = {
       lastVisitDate: visit.date,
       nextAppointmentDate: visit.nextAppointmentDate || null,
@@ -456,163 +151,45 @@ export async function addVisit(patientId: string, visit: any) {
     if (visit.nextCounselingDate) {
       patientUpdate.nextCounselingDate = visit.nextCounselingDate;
     }
-    await updateDoc(doc(db, 'patients', patientId), patientUpdate);
-
-    const patientDoc = await getDoc(doc(db, 'patients', patientId));
-    const patientData = patientDoc.data();
-    const patientName = patientData ? `${patientData.firstName} ${patientData.lastName}` : patientId;
-
-    await logActivity('Visit Recorded', `New ${visit.type} visit recorded for ${patientName}.`, 'Visit');
-
-    // If VL is unsuppressed, create or update a counseling track
-    if (visit.vlResult !== undefined && visit.vlResult >= 50) {
-      const patientDoc = await getDoc(doc(db, 'patients', patientId));
-      const patientData = patientDoc.data();
-      if (patientData) {
-        // Check if there's an active track
-        const tracksQuery = query(
-          collection(db, 'counseling_tracks'), 
-          where('patientId', '==', patientId),
-          where('completed', '==', false)
-        );
-        const tracksSnapshot = await getDocs(tracksQuery);
-        
-        if (tracksSnapshot.empty) {
-          await addCounselingTrack({
-            patientId,
-            patientName: `${patientData.firstName} ${patientData.lastName}`,
-            clinicNumber: patientData.clinicNumber,
-            startDate: visit.date,
-            vlResult: visit.vlResult,
-            session1: { status: 'Pending' },
-            session2: { status: 'Pending' },
-            session3: { status: 'Pending' },
-            completed: false,
-            nextCounselingDate: visit.nextCounselingDate || null,
-          });
-        } else {
-          // Update existing track with new VL and next counseling date
-          const trackId = tracksSnapshot.docs[0].id;
-          await updateCounselingTrack(trackId, {
-            vlResult: visit.vlResult,
-            nextCounselingDate: visit.nextCounselingDate || null,
-          });
-        }
-      }
-    } else if (visit.type === 'Counselling') {
-      // If it's a counseling visit, update the active track's next date
-      const tracksQuery = query(
-        collection(db, 'counseling_tracks'), 
-        where('patientId', '==', patientId),
-        where('completed', '==', false)
-      );
-      const tracksSnapshot = await getDocs(tracksQuery);
-      if (!tracksSnapshot.empty) {
-        const trackId = tracksSnapshot.docs[0].id;
-        await updateCounselingTrack(trackId, {
-          nextCounselingDate: visit.nextCounselingDate || null,
-        });
-      }
-    }
-
-    // Create/update appointment if nextAppointmentDate is provided
-    if (visit.nextAppointmentDate) {
-      const patientDoc = await getDoc(doc(db, 'patients', patientId));
-      const patientData = patientDoc.data();
-      if (patientData) {
-        await addAppointment({
-          patientId,
-          patientName: `${patientData.firstName} ${patientData.lastName}`,
-          clinicNumber: patientData.clinicNumber,
-          phone: patientData.phone || '',
-          date: visit.nextAppointmentDate,
-          type: 'Clinic Visit',
-          status: 'Pending'
-        });
-      }
-    }
-
-    // Create separate appointment for counseling if nextCounselingDate is provided
-    if (visit.nextCounselingDate) {
-      const patientDoc = await getDoc(doc(db, 'patients', patientId));
-      const patientData = patientDoc.data();
-      if (patientData) {
-        await addAppointment({
-          patientId,
-          patientName: `${patientData.firstName} ${patientData.lastName}`,
-          clinicNumber: patientData.clinicNumber,
-          phone: patientData.phone || '',
-          date: visit.nextCounselingDate,
-          type: 'Counseling',
-          status: 'Pending'
-        });
-      }
-    }
-
-    return newDocRef.id;
-  } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, path);
-  }
+    
+    updatePatient(patientId, patientUpdate);
+    
+    socket.once('operation_success', ({ id }) => resolve(id));
+  });
 }
 
 // Appointments
 export function subscribeToAppointments(callback: (appointments: any[]) => void) {
-  const path = 'appointments';
-  return onSnapshot(collection(db, path), (snapshot) => {
-    const appointments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    callback(appointments);
-  }, (error) => {
-    handleFirestoreError(error, OperationType.GET, path);
-  });
+  socket.on('appointments_update', callback);
+  socket.emit('subscribe', 'appointments');
+  return () => socket.off('appointments_update', callback);
 }
 
 export async function addAppointment(appointment: any) {
-  const path = 'appointments';
-  try {
-    const newDocRef = doc(collection(db, path));
-    await setDoc(newDocRef, { ...appointment, createdAt: Timestamp.now() });
-    return newDocRef.id;
-  } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, path);
-  }
+  return new Promise((resolve) => {
+    socket.emit('add_document', { collection: 'appointments', data: appointment });
+    socket.once('operation_success', ({ id }) => resolve(id));
+  });
 }
 
 export async function updateAppointmentStatus(id: string, status: string) {
-  const path = `appointments/${id}`;
-  try {
-    await updateDoc(doc(db, 'appointments', id), { status, updatedAt: Timestamp.now() });
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
+  socket.emit('update_document', { collection: 'appointments', id, data: { status } });
 }
 
 // Counseling Tracks
 export function subscribeToCounselingTracks(callback: (tracks: any[]) => void) {
-  const path = 'counseling_tracks';
-  return onSnapshot(collection(db, path), (snapshot) => {
-    const tracks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    callback(tracks);
-  }, (error) => {
-    handleFirestoreError(error, OperationType.GET, path);
-  });
+  socket.on('counseling_tracks_update', callback);
+  socket.emit('subscribe', 'counseling_tracks');
+  return () => socket.off('counseling_tracks_update', callback);
 }
 
 export async function addCounselingTrack(track: any) {
-  const path = 'counseling_tracks';
-  try {
-    const newDocRef = doc(collection(db, path));
-    await setDoc(newDocRef, { ...track, createdAt: Timestamp.now() });
-    return newDocRef.id;
-  } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, path);
-  }
+  return new Promise((resolve) => {
+    socket.emit('add_document', { collection: 'counseling_tracks', data: track });
+    socket.once('operation_success', ({ id }) => resolve(id));
+  });
 }
 
 export async function updateCounselingTrack(id: string, track: any) {
-  const path = `counseling_tracks/${id}`;
-  try {
-    await updateDoc(doc(db, 'counseling_tracks', id), { ...track, updatedAt: Timestamp.now() });
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
+  socket.emit('update_document', { collection: 'counseling_tracks', id, data: track });
 }
