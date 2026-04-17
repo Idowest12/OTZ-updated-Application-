@@ -1,4 +1,18 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBRbymmmusPZPXgFvsMU0FAI3vLsTeSQ4w",
+  authDomain: "otz-dummy-system.firebaseapp.com",
+  projectId: "otz-dummy-system",
+  storageBucket: "otz-dummy-system.firebasestorage.app",
+  messagingSenderId: "968979776916",
+  appId: "1:968979776916:web:cd7a569ef66f726dbd7b81"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
 
 interface User {
   uid: string;
@@ -23,55 +37,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const checkAuth = async () => {
-      const token = localStorage.getItem('token');
-      if (token) {
-        try {
-          const res = await fetch('/api/auth/me', {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          if (res.ok) {
-            const data = await res.json();
-            setUser(data.user);
-            setIsAdmin(data.user.role === 'admin');
-          } else {
-            localStorage.removeItem('token');
-          }
-        } catch (err) {
-          console.error(err);
-          localStorage.removeItem('token');
-        }
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser) {
+        setUser({
+          uid: firebaseUser.uid,
+          email: firebaseUser.email || '',
+          displayName: firebaseUser.displayName || 'User',
+          role: 'admin' // hardcoded for now just to give access
+        });
+        setIsAdmin(true);
+      } else {
+        setUser(null);
+        setIsAdmin(false);
       }
       setLoading(false);
-    };
-    checkAuth();
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const login = async (email: string, password: string) => {
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        localStorage.setItem('token', data.token);
-        setUser(data.user);
-        setIsAdmin(data.user.role === 'admin');
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error: any) {
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential' || error.code === 'auth/invalid-login-credentials') {
+        await createUserWithEmailAndPassword(auth, email, password);
       } else {
-        throw new Error('Invalid credentials');
+        throw error;
       }
-    } catch (error) {
-      console.error('Login error:', error);
-      throw error;
     }
   };
 
   const logout = async () => {
-    localStorage.removeItem('token');
-    setUser(null);
-    setIsAdmin(false);
+    await signOut(auth);
   };
 
   return (
@@ -88,3 +86,4 @@ export function useAuth() {
   }
   return context;
 }
+

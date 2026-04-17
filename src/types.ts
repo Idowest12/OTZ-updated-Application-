@@ -19,6 +19,7 @@ export interface Patient {
   ltfuStatus: LtfuStatus;
   lastVisitDate?: string;
   nextAppointmentDate?: string;
+  nextCounselingDate?: string;
   vlSuppressed?: boolean;
   lastVlDate?: string;
   lastVlResult?: number;

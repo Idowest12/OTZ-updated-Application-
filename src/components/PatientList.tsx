@@ -470,24 +470,28 @@ export function PatientList({
           </Button>
           <Button variant="outline" size="sm" className="gap-2" onClick={() => {
             const csvContent = [
-              ['MH NO', 'First Name', 'Last Name', 'Phone', 'Age', 'Gender', 'ART STATUS', 'Last Visit', 'Next Appointment', 'VL Status'].join(','),
+              ['MH NO', 'First Name', 'Last Name', 'Phone', 'Age', 'Gender', 'Address', 'OTZ Enrollment Date', 'Date of Birth', 'ART STATUS', 'Last Visit', 'Next Appointment', 'Next Counseling', 'VL Status'].join(','),
               ...patients.map(p => [
-                p.clinicNumber,
-                p.firstName,
-                p.lastName,
-                p.phone || '',
-                p.age,
-                p.gender,
-                p.ltfuStatus,
-                p.lastVisitDate || 'N/A',
-                getNextAppointment(p.id!, p.nextAppointmentDate) || 'N/A',
-                p.vlSuppressed ? 'Suppressed' : 'Unsuppressed'
+                `"${p.clinicNumber || ''}"`,
+                `"${p.firstName || ''}"`,
+                `"${p.lastName || ''}"`,
+                `"${p.phone || ''}"`,
+                p.age || '',
+                `"${p.gender || ''}"`,
+                `"${p.address || ''}"`,
+                `"${p.enrollmentDate || ''}"`,
+                `"${p.dateOfBirth || ''}"`,
+                `"${p.ltfuStatus || ''}"`,
+                `"${p.lastVisitDate || 'N/A'}"`,
+                `"${getNextAppointment(p.id!, p.nextAppointmentDate) || 'N/A'}"`,
+                `"${p.nextCounselingDate || 'N/A'}"`,
+                p.vlSuppressed ? '"Suppressed"' : '"Unsuppressed"'
               ].join(','))
             ].join('\n');
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
-            link.download = 'patients_export.csv';
+            link.download = 'patients_export_full.csv';
             link.click();
           }}>
             <FileDown className="h-4 w-4" />

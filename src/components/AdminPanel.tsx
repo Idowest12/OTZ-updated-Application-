@@ -17,7 +17,8 @@ import {
   clearAllAppointments,
   graduatePatientsOver25,
   subscribeToUsers,
-  updateUserRole
+  updateUserRole,
+  seedDummyData
 } from '../services/firestoreService';
 import { UserProfile } from '../types';
 import { formatDate } from '../utils';
@@ -35,7 +36,8 @@ import {
   Users,
   FileText,
   Download,
-  ShieldCheck
+  ShieldCheck,
+  Database
 } from 'lucide-react';
 import { cn } from '../utils';
 import { Modal } from './ui/Modal';
@@ -63,6 +65,7 @@ export function AdminPanel() {
   const [isClearingAppointments, setIsClearingAppointments] = useState(false);
   const [isGraduating, setIsGraduating] = useState(false);
   const [isWiping, setIsWiping] = useState(false);
+  const [isSeeding, setIsSeeding] = useState(false);
   const [wipeConfirmText, setWipeConfirmText] = useState('');
 
   // Hardcoded for now as per AuthContext
@@ -207,28 +210,48 @@ export function AdminPanel() {
   };
 
   const handleRoleChange = async (uid: string, newRole: 'admin' | 'staff') => {
-    if (window.confirm(`Are you sure you want to change this user's role to ${newRole}?`)) {
-      try {
-        await updateUserRole(uid, newRole);
-      } catch (error) {
-        alert('Failed to update user role.');
-      }
+    try {
+      await updateUserRole(uid, newRole);
+    } catch (error) {
+      console.error('Failed to update user role.', error);
     }
   };
 
+  const [wipeStatus, setWipeStatus] = useState<string | null>(null);
+  
   const handleWipeData = async () => {
     if (wipeConfirmText !== 'DELETE ALL') return;
     
     setIsWiping(true);
+    setWipeStatus(null);
     try {
       await wipeAllTestData();
-      alert('Successfully wiped all test data. The system is now clean.');
+      setWipeStatus('Successfully wiped all test data.');
       setIsWipeModalOpen(false);
       setWipeConfirmText('');
     } catch (error) {
-      alert('Failed to wipe test data. Please try again.');
+      setWipeStatus('Failed to wipe test data.');
+      console.error(error);
     } finally {
       setIsWiping(false);
+      setTimeout(() => setWipeStatus(null), 5000);
+    }
+  };
+
+  const [seedStatus, setSeedStatus] = useState<string | null>(null);
+
+  const handleSeedData = async () => {
+    setIsSeeding(true);
+    setSeedStatus(null);
+    try {
+      await seedDummyData();
+      setSeedStatus('Successfully seeded 195 Dummy Patients!');
+    } catch (error) {
+      console.error("Seed error:", error);
+      setSeedStatus('Failed to seed data. Check console.');
+    } finally {
+      setIsSeeding(false);
+      setTimeout(() => setSeedStatus(null), 5000);
     }
   };
 
@@ -437,6 +460,25 @@ export function AdminPanel() {
                 <AlertTriangle className="h-4 w-4" />
                 Factory Reset (Wipe All Data)
               </Button>
+              <Button 
+                variant="outline" 
+                className="justify-start gap-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-700 border-emerald-200 dark:border-emerald-900/50 font-bold"
+                onClick={handleSeedData}
+                disabled={isSeeding}
+              >
+                <Database className="h-4 w-4" />
+                {isSeeding ? 'Seeding Data...' : 'Seed Exact Dummy Data (195 Clients)'}
+              </Button>
+              {seedStatus && (
+                <div className="text-sm font-medium text-emerald-600 p-2 bg-emerald-50 rounded dark:bg-emerald-900/20">
+                  {seedStatus}
+                </div>
+              )}
+              {wipeStatus && (
+                <div className="text-sm font-medium text-amber-600 p-2 bg-amber-50 rounded dark:bg-amber-900/20">
+                  {wipeStatus}
+                </div>
+              )}
             </div>
           </Card>
         </div>
