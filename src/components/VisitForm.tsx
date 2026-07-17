@@ -65,6 +65,22 @@ export function VisitForm({ patient, initialType, onSubmit, onCancel }: VisitFor
         </div>
       </div>
 
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Input
+          label="Viral Load Result (copies/ml)"
+          type="number"
+          placeholder="Leave blank if no result"
+          value={formData.vlResult || ''}
+          onChange={(e) => setFormData({ ...formData, vlResult: e.target.value ? Number(e.target.value) : undefined })}
+        />
+        <Input
+          label="Next Appointment Date"
+          type="date"
+          value={formData.nextAppointmentDate || ''}
+          onChange={(e) => setFormData({ ...formData, nextAppointmentDate: e.target.value })}
+        />
+      </div>
+
       <div className="space-y-1.5">
         <label className="text-sm font-medium text-slate-700">Clinical Notes</label>
         <textarea

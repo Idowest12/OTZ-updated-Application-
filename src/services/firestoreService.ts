@@ -1,31 +1,23 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { 
-  getFirestore, 
-  collection, 
-  doc, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
+import {
+  collection,
+  doc,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  getDocs,
+  getDoc,
   onSnapshot,
   query,
-  getDocs,
-  writeBatch
+  where,
+  orderBy,
+  Timestamp,
+  writeBatch,
+  limit,
 } from 'firebase/firestore';
+import { db, auth } from '../firebase';
+import { Patient, ActivityLog, UserProfile, Visit } from '../types';
 
-const firebaseConfig = {
-  apiKey: "AIzaSyBRbymmmusPZPXgFvsMU0FAI3vLsTeSQ4w",
-  authDomain: "otz-dummy-system.firebaseapp.com",
-  projectId: "otz-dummy-system",
-  storageBucket: "otz-dummy-system.firebasestorage.app",
-  messagingSenderId: "968979776916",
-  appId: "1:968979776916:web:cd7a569ef66f726dbd7b81"
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-
-enum OperationType {
+export enum OperationType {
   CREATE = 'create',
   UPDATE = 'update',
   DELETE = 'delete',
@@ -40,10 +32,10 @@ interface FirestoreErrorInfo {
   path: string | null;
   authInfo: {
     userId: string | undefined;
-    email: string | undefined;
+    email: string | null | undefined;
     emailVerified: boolean | undefined;
     isAnonymous: boolean | undefined;
-    tenantId: string | undefined;
+    tenantId: string | null | undefined;
     providerInfo: {
       providerId: string;
       displayName: string | null;
@@ -54,15 +46,14 @@ interface FirestoreErrorInfo {
 }
 
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const auth = getAuth();
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
       userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email || undefined,
+      email: auth.currentUser?.email,
       emailVerified: auth.currentUser?.emailVerified,
       isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId || undefined,
+      tenantId: auth.currentUser?.tenantId,
       providerInfo: auth.currentUser?.providerData.map(provider => ({
         providerId: provider.providerId,
         displayName: provider.displayName,
@@ -72,274 +63,546 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     },
     operationType,
     path
-  };
+  }
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }
 
-export async function logActivity(action: string, details: string, user: string) {
+// Activity Logging Helper
+export async function logActivity(action: string, details: string, type: ActivityLog['type']) {
+  if (!auth.currentUser) return;
+  const path = 'activity_logs';
   try {
-    await addDoc(collection(db, 'activity_logs'), { action, details, user, timestamp: new Date().toISOString() });
+    const newDocRef = doc(collection(db, path));
+    await setDoc(newDocRef, {
+      userId: auth.currentUser.uid,
+      userName: auth.currentUser.displayName || auth.currentUser.email || 'Unknown User',
+      action,
+      details,
+      type,
+      timestamp: Timestamp.now()
+    });
   } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, 'activity_logs');
+    console.error('Error logging activity:', error);
   }
 }
 
-export function subscribeToActivityLogs(callback: (logs: any[]) => void) {
-  return onSnapshot(collection(db, 'activity_logs'), (snapshot) => {
-    callback(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+export function subscribeToActivityLogs(callback: (logs: ActivityLog[]) => void) {
+  const path = 'activity_logs';
+  const q = query(collection(db, path), orderBy('timestamp', 'desc'), limit(100));
+  return onSnapshot(q, (snapshot) => {
+    const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityLog));
+    callback(logs);
   }, (error) => {
-    handleFirestoreError(error, OperationType.LIST, 'activity_logs');
+    handleFirestoreError(error, OperationType.GET, path);
   });
 }
 
-export async function clearAllVisits() {}
-export async function clearAllCounseling() {}
-export async function clearAllAppointments() {}
-export async function clearActivityLogs() {}
-export async function clearAllActivityLogs() {}
-export async function cleanupOldLogs(days?: number) { return 0; }
-export async function wipeAllTestData() {
-  const collections = ['patients', 'visits', 'appointments', 'counseling_tracks', 'activity_logs'];
-  
-  let batch = writeBatch(db);
-  let count = 0;
+export async function cleanupOldLogs(days: number = 30) {
+  const path = 'activity_logs';
+  try {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const q = query(collection(db, path), where('timestamp', '<', Timestamp.fromDate(cutoff)));
+    const snapshot = await getDocs(q);
+    
+    const batch = writeBatch(db);
+    snapshot.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+    
+    await batch.commit();
+    await logActivity('System Cleanup', `Deleted ${snapshot.size} logs older than ${days} days.`, 'System');
+    return snapshot.size;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
 
-  for (const coll of collections) {
-    const q = await getDocs(collection(db, coll));
-    for (const d of q.docs) {
-      batch.delete(doc(db, coll, d.id));
+export async function updatePatientVL(patientId: string, vlResult: number, vlDate: string) {
+  const path = 'patients';
+  try {
+    const patientRef = doc(db, path, patientId);
+    const vlSuppressed = vlResult < 1000;
+    
+    await updateDoc(patientRef, {
+      lastVlResult: vlResult,
+      lastVlDate: vlDate,
+      vlSuppressed: vlSuppressed
+    });
+    
+    await logActivity(
+      'Viral Load Updated',
+      `Updated VL for patient ID: ${patientId} to ${vlResult} copies/mL`,
+      'Patient'
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function graduatePatientsOver25() {
+  const path = 'patients';
+  try {
+    const q = query(collection(db, path), where('ltfuStatus', '==', 'Active'));
+    const snapshot = await getDocs(q);
+    
+    let batch = writeBatch(db);
+    let count = 0;
+    
+    for (const document of snapshot.docs) {
+      const patient = document.data() as Patient;
+      if (patient.age > 25) {
+        batch.update(document.ref, { ltfuStatus: 'Graduated' });
+        count++;
+        
+        if (count === 500) {
+          await batch.commit();
+          batch = writeBatch(db);
+          count = 0;
+        }
+      }
+    }
+    
+    if (count > 0) {
+      await batch.commit();
+    }
+    
+    if (count > 0) {
+      await logActivity(
+        'Patients Graduated',
+        `Graduated ${count} patients over the age of 25`,
+        'System'
+      );
+    }
+    
+    return count;
+  } catch (error) {
+    console.error('Error graduating patients:', error);
+    throw error;
+  }
+}
+
+export async function clearAllActivityLogs() {
+  const path = 'activity_logs';
+  try {
+    const q = query(collection(db, path));
+    const snapshot = await getDocs(q);
+    
+    let batch = writeBatch(db);
+    let count = 0;
+    
+    for (const document of snapshot.docs) {
+      batch.delete(document.ref);
       count++;
-      if (count >= 400) {
+      if (count === 500) {
         await batch.commit();
         batch = writeBatch(db);
         count = 0;
       }
     }
-  }
-  
-  if (count > 0) {
-    await batch.commit();
-  }
-  return true;
-}
-
-export async function seedDummyData() {
-  await wipeAllTestData();
-  let patientIds: any[] = [];
-  
-  // Use batch for inserts
-  let batch = writeBatch(db);
-  let batchCount = 0;
-
-  const commitBatchAndReset = async () => {
-    if (batchCount > 0) {
+    if (count > 0) {
       await batch.commit();
-      batch = writeBatch(db);
-      batchCount = 0;
     }
-  };
-
-  const addPatientToBatch = async (patientData: any) => {
-    const docRef = doc(collection(db, 'patients'));
-    batch.set(docRef, patientData);
-    batchCount++;
-    if (batchCount >= 400) await commitBatchAndReset(); // Firestore batch limit is 500
-    return docRef;
-  };
-
-  // Add 175 Active Patients
-  for (let i = 0; i < 175; i++) {
-    let isPendingVL = i < 3;
-    let isSuppressed = isPendingVL ? null : (i < 155 ? true : false);
-
-    const docRef = await addPatientToBatch({
-      firstName: "TestClient",
-      lastName: `Active${i}`,
-      clinicNumber: `MH-${1000 + i}`,
-      age: Math.floor(Math.random() * 10) + 12, // 12-21
-      gender: i % 2 === 0 ? 'Male' : 'Female',
-      ltfuStatus: 'Active',
-      enrollmentDate: '2023-01-15',
-      dateOfBirth: '2010-01-01',
-      lastVisitDate: '2024-05-01', 
-      phone: '08012345678',
-      address: 'Dummy Address',
-      vlSuppressed: isSuppressed,
-      lastVlDate: isPendingVL ? null : '2024-04-10',
-      lastVlResult: isPendingVL ? null : (isSuppressed ? 20 : 1500)
-    });
-    patientIds.push({ id: docRef.id, name: `TestClient Active${i}`, clinic: `MH-${1000 + i}`});
-  }
-
-  // Add 3 LTFU Patients
-  for (let i = 0; i < 3; i++) {
-    await addPatientToBatch({
-      firstName: "TestClient", lastName: `LTFU${i}`, clinicNumber: `MH-L${i}`, age: 15, gender: 'Male', ltfuStatus: 'LTFU', enrollmentDate: '2022-01-01', dateOfBirth: '2010-01-01'
-    });
-  }
-
-  // Add 9 Graduated Patients
-  for (let i = 0; i < 9; i++) {
-    await addPatientToBatch({
-      firstName: "TestClient", lastName: `Grad${i}`, clinicNumber: `MH-G${i}`, age: 26, gender: 'Female', ltfuStatus: 'Graduated', enrollmentDate: '2015-01-01', dateOfBirth: '1998-01-01'
-    });
-  }
-
-  // Add 8 Transferred Out Patients
-  for (let i = 0; i < 8; i++) {
-    await addPatientToBatch({
-      firstName: "TestClient", lastName: `Trans${i}`, clinicNumber: `MH-T${i}`, age: 18, gender: 'Male', ltfuStatus: 'Transferred Out', enrollmentDate: '2020-01-01', dateOfBirth: '2006-01-01'
-    });
-  }
-
-  await commitBatchAndReset(); // Commit patients before creating relationships
-
-  // Add 27 Upcoming Visits (Appointments)
-  for (let i = 0; i < 27; i++) {
-    const apptRef = doc(collection(db, 'appointments'));
-    batch.set(apptRef, {
-      patientId: patientIds[i].id,
-      patientName: patientIds[i].name,
-      clinicNumber: patientIds[i].clinic,
-      date: '2026-06-01',
-      status: 'Pending',
-      type: 'Clinic Visit'
-    });
-    batchCount++;
     
-    const pRef = doc(db, 'patients', patientIds[i].id);
-    batch.update(pRef, { nextAppointmentDate: '2026-06-01' });
-    batchCount++;
+    await logActivity(
+      'System Cleanup',
+      'Cleared all activity logs',
+      'System'
+    );
+    
+    return snapshot.size;
+  } catch (error) {
+    console.error('Error clearing logs:', error);
+    throw error;
   }
-
-  // Add 1 High VL Counseling track
-  if (patientIds.length > 170) {
-    const trackRef = doc(collection(db, 'counseling_tracks'));
-    batch.set(trackRef, {
-      patientId: patientIds[170].id, // Use an unsuppressed patient
-      patientName: patientIds[170].name,
-      clinicNumber: patientIds[170].clinic,
-      startDate: new Date().toISOString().split('T')[0],
-      completed: false,
-      sessions: []
-    });
-    batchCount++;
-  }
-
-  await commitBatchAndReset(); // Commit remaining
-
-  return true;
 }
-export async function saveUserProfile(user?: any, defaultRole?: any) {}
-export function subscribeToUsers(callback: (users: any[]) => void) { return () => {}; }
-export async function updateUserRole(uid?: string, newRole?: string) {}
 
-export function subscribeToPatients(callback: (patients: any[]) => void) {
-  console.log("Subscribing to patients collection...");
-  return onSnapshot(collection(db, 'patients'), (snapshot) => {
-    console.log(`Received snapshot with ${snapshot.docs.length} patients.`);
-    callback(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+export async function saveUserProfile(user: any, defaultRole: 'admin' | 'staff' = 'staff') {
+  const path = 'users';
+  try {
+    const userRef = doc(db, path, user.uid);
+    const userSnap = await getDoc(userRef);
+    
+    const now = new Date().toISOString();
+    
+    if (!userSnap.exists()) {
+      await setDoc(userRef, {
+        uid: user.uid,
+        email: user.email || '',
+        displayName: user.displayName || '',
+        photoURL: user.photoURL || '',
+        role: defaultRole,
+        createdAt: now,
+        lastLogin: now
+      });
+    } else {
+      await updateDoc(userRef, {
+        displayName: user.displayName || userSnap.data().displayName,
+        photoURL: user.photoURL || userSnap.data().photoURL,
+        lastLogin: now
+      });
+    }
+  } catch (error) {
+    console.error('Error saving user profile:', error);
+  }
+}
+
+export function subscribeToUsers(callback: (users: UserProfile[]) => void) {
+  const path = 'users';
+  const q = query(collection(db, path), orderBy('createdAt', 'desc'));
+  return onSnapshot(q, (snapshot) => {
+    const users = snapshot.docs.map(doc => doc.data() as UserProfile);
+    callback(users);
   }, (error) => {
-    handleFirestoreError(error, OperationType.LIST, 'patients');
+    console.error('Error subscribing to users:', error);
+  });
+}
+
+export async function updateUserRole(uid: string, newRole: 'admin' | 'staff') {
+  const path = 'users';
+  try {
+    const userRef = doc(db, path, uid);
+    await updateDoc(userRef, { role: newRole });
+    await logActivity('System', `Updated user role for ${uid} to ${newRole}`, 'System');
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+async function clearCollectionData(collectionName: string, logMessage: string) {
+  try {
+    const q = query(collection(db, collectionName));
+    const snapshot = await getDocs(q);
+    let batch = writeBatch(db);
+    let count = 0;
+    for (const document of snapshot.docs) {
+      batch.delete(document.ref);
+      count++;
+      if (count === 500) {
+        await batch.commit();
+        batch = writeBatch(db);
+        count = 0;
+      }
+    }
+    if (count > 0) {
+      await batch.commit();
+    }
+    await logActivity('System Cleanup', logMessage, 'System');
+    return snapshot.size;
+  } catch (error) {
+    console.error(`Error clearing ${collectionName}:`, error);
+    throw error;
+  }
+}
+
+export const clearAllVisits = () => clearCollectionData('visits', 'Cleared all visit records');
+export const clearAllCounseling = () => clearCollectionData('counseling_tracks', 'Cleared all counseling records');
+export const clearAllAppointments = () => clearCollectionData('appointments', 'Cleared all appointment records');
+
+export async function wipeAllTestData() {
+  const collectionsToClear = ['patients', 'visits', 'appointments', 'counseling_tracks', 'activity_logs'];
+  
+  try {
+    for (const collectionName of collectionsToClear) {
+      const q = query(collection(db, collectionName));
+      const snapshot = await getDocs(q);
+      
+      let batch = writeBatch(db);
+      let count = 0;
+      
+      for (const document of snapshot.docs) {
+        batch.delete(document.ref);
+        count++;
+        if (count === 500) {
+          await batch.commit();
+          batch = writeBatch(db);
+          count = 0;
+        }
+      }
+      if (count > 0) {
+        await batch.commit();
+      }
+    }
+    
+    await logActivity(
+      'Factory Reset',
+      'Wiped all test data from the system',
+      'System'
+    );
+    
+    return true;
+  } catch (error) {
+    console.error('Error wiping test data:', error);
+    throw error;
+  }
+}
+
+// Patients
+export function subscribeToPatients(callback: (patients: any[]) => void) {
+  const path = 'patients';
+  return onSnapshot(collection(db, path), (snapshot) => {
+    const patients = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    callback(patients);
+  }, (error) => {
+    handleFirestoreError(error, OperationType.GET, path);
   });
 }
 
 export async function addPatient(patient: any) {
-  const docRef = await addDoc(collection(db, 'patients'), patient);
-  return docRef.id;
+  const path = 'patients';
+  try {
+    const newDocRef = doc(collection(db, path));
+    await setDoc(newDocRef, { ...patient, createdAt: Timestamp.now() });
+    await logActivity('Patient Registered', `New patient ${patient.firstName} ${patient.lastName} (${patient.clinicNumber}) added.`, 'Patient');
+    return newDocRef.id;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
 }
 
 export async function bulkAddPatients(patients: any[]) {
-  // Simple iteration for now
-  for (const p of patients) {
-    await addDoc(collection(db, 'patients'), p);
+  const path = 'patients';
+  try {
+    const BATCH_SIZE = 500;
+    for (let i = 0; i < patients.length; i += BATCH_SIZE) {
+      const batch = writeBatch(db);
+      const chunk = patients.slice(i, i + BATCH_SIZE);
+      
+      chunk.forEach((patient) => {
+        const newDocRef = doc(collection(db, path));
+        batch.set(newDocRef, { ...patient, createdAt: Timestamp.now() });
+      });
+      
+      await batch.commit();
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
 
 export async function updatePatient(id: string, patient: any) {
-  await updateDoc(doc(db, 'patients', id), patient);
+  const path = `patients/${id}`;
+  try {
+    await updateDoc(doc(db, 'patients', id), { ...patient, updatedAt: Timestamp.now() });
+    await logActivity('Patient Updated', `Patient record (ID: ${id}) modified.`, 'Patient');
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
 }
 
 export async function deletePatient(id: string) {
-  await deleteDoc(doc(db, 'patients', id));
+  const path = `patients/${id}`;
+  try {
+    const patientDoc = await getDoc(doc(db, 'patients', id));
+    const patientData = patientDoc.data();
+    const patientName = patientData ? `${patientData.firstName} ${patientData.lastName}` : id;
+    
+    await deleteDoc(doc(db, 'patients', id));
+    await logActivity('Patient Deleted', `Patient ${patientName} (ID: ${id}) was permanently removed.`, 'Patient');
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
 }
 
-export async function updatePatientVL(id: string, vlResult: number, date: string) {
-  await updateDoc(doc(db, 'patients', id), {
-    vlSuppressed: vlResult < 50,
-    lastVlDate: date,
-    lastVlResult: vlResult
-  });
-}
-
-export async function graduatePatientsOver25() {}
-
+// Visits
 export function subscribeToVisits(patientId: string, callback: (visits: any[]) => void) {
-  return onSnapshot(collection(db, 'visits'), (snapshot) => {
-    const visits = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any })).filter(v => v.patientId === patientId);
+  const path = 'visits';
+  const q = query(collection(db, path), where('patientId', '==', patientId), orderBy('date', 'desc'));
+  return onSnapshot(q, (snapshot) => {
+    const visits = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     callback(visits);
   }, (error) => {
-    handleFirestoreError(error, OperationType.LIST, 'visits');
+    handleFirestoreError(error, OperationType.GET, path);
   });
 }
 
 export function subscribeToAllVisits(callback: (visits: any[]) => void) {
-  return onSnapshot(collection(db, 'visits'), (snapshot) => {
-    callback(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+  const path = 'visits';
+  return onSnapshot(collection(db, path), (snapshot) => {
+    const visits = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    callback(visits);
   }, (error) => {
-    handleFirestoreError(error, OperationType.LIST, 'visits');
+    handleFirestoreError(error, OperationType.GET, path);
   });
 }
 
 export async function addVisit(patientId: string, visit: any) {
-  const docRef = await addDoc(collection(db, 'visits'), { ...visit, patientId });
-  const patientUpdate: any = {
-    lastVisitDate: visit.date,
-    nextAppointmentDate: visit.nextAppointmentDate || null,
-  };
-  if (visit.vlResult !== undefined && visit.vlResult !== null) {
-    patientUpdate.vlSuppressed = visit.vlResult < 50;
-    patientUpdate.lastVlDate = visit.date;
-    patientUpdate.lastVlResult = visit.vlResult;
+  const path = 'visits';
+  try {
+    const newDocRef = doc(collection(db, path));
+    await setDoc(newDocRef, { ...visit, patientId, createdAt: Timestamp.now() });
+    
+    const patientUpdate: any = {
+      lastVisitDate: visit.date,
+      nextAppointmentDate: visit.nextAppointmentDate || null,
+    };
+    
+    const vlResultSafe = visit.vlResult !== undefined && visit.vlResult !== null && visit.vlResult !== '' 
+      ? Number(visit.vlResult) 
+      : undefined;
+    
+    if (vlResultSafe !== undefined && !isNaN(vlResultSafe)) {
+      patientUpdate.vlSuppressed = vlResultSafe < 50;
+      patientUpdate.lastVlDate = visit.date;
+      patientUpdate.lastVlResult = vlResultSafe;
+    } else if (visit.type === 'Drug Pickup & VL Test') {
+      patientUpdate.lastVlDate = null;
+      patientUpdate.vlSuppressed = null;
+    }
+    
+    if (visit.nextCounselingDate) {
+      patientUpdate.nextCounselingDate = visit.nextCounselingDate;
+    }
+    await updateDoc(doc(db, 'patients', patientId), patientUpdate);
+
+    const patientDoc = await getDoc(doc(db, 'patients', patientId));
+    const patientData = patientDoc.data();
+    const patientName = patientData ? `${patientData.firstName} ${patientData.lastName}` : patientId;
+
+    await logActivity('Visit Recorded', `New ${visit.type} visit recorded for ${patientName}.`, 'Visit');
+
+    if (vlResultSafe !== undefined && vlResultSafe >= 50) {
+      if (patientData) {
+        const tracksQuery = query(
+          collection(db, 'counseling_tracks'), 
+          where('patientId', '==', patientId),
+          where('completed', '==', false)
+        );
+        const tracksSnapshot = await getDocs(tracksQuery);
+        
+        if (tracksSnapshot.empty) {
+          await addCounselingTrack({
+            patientId,
+            patientName: `${patientData.firstName} ${patientData.lastName}`,
+            clinicNumber: patientData.clinicNumber,
+            startDate: visit.date,
+            vlResult: vlResultSafe,
+            session1: { status: 'Pending' },
+            session2: { status: 'Pending' },
+            session3: { status: 'Pending' },
+            completed: false,
+            nextCounselingDate: visit.nextCounselingDate || null,
+          });
+        } else {
+          const trackId = tracksSnapshot.docs[0].id;
+          await updateCounselingTrack(trackId, {
+            vlResult: vlResultSafe,
+            nextCounselingDate: visit.nextCounselingDate || null,
+          });
+        }
+      }
+    } else if (visit.type === 'Counselling') {
+      const tracksQuery = query(
+        collection(db, 'counseling_tracks'), 
+        where('patientId', '==', patientId),
+        where('completed', '==', false)
+      );
+      const tracksSnapshot = await getDocs(tracksQuery);
+      if (!tracksSnapshot.empty) {
+        const trackId = tracksSnapshot.docs[0].id;
+        await updateCounselingTrack(trackId, {
+          nextCounselingDate: visit.nextCounselingDate || null,
+        });
+      }
+    }
+
+    if (visit.nextAppointmentDate) {
+      if (patientData) {
+        await addAppointment({
+          patientId,
+          patientName: `${patientData.firstName} ${patientData.lastName}`,
+          clinicNumber: patientData.clinicNumber,
+          phone: patientData.phone || '',
+          date: visit.nextAppointmentDate,
+          type: 'Clinic Visit',
+          status: 'Pending'
+        });
+      }
+    }
+
+    if (visit.nextCounselingDate) {
+      if (patientData) {
+        await addAppointment({
+          patientId,
+          patientName: `${patientData.firstName} ${patientData.lastName}`,
+          clinicNumber: patientData.clinicNumber,
+          phone: patientData.phone || '',
+          date: visit.nextCounselingDate,
+          type: 'Counseling',
+          status: 'Pending'
+        });
+      }
+    }
+
+    return newDocRef.id;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
   }
-  if (visit.nextCounselingDate) {
-    patientUpdate.nextCounselingDate = visit.nextCounselingDate;
-  }
-  await updateDoc(doc(db, 'patients', patientId), patientUpdate);
-  return docRef.id;
 }
 
+// Appointments
 export function subscribeToAppointments(callback: (appointments: any[]) => void) {
-  return onSnapshot(collection(db, 'appointments'), (snapshot) => {
-    callback(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+  const path = 'appointments';
+  return onSnapshot(collection(db, path), (snapshot) => {
+    const appointments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    callback(appointments);
   }, (error) => {
-    handleFirestoreError(error, OperationType.LIST, 'appointments');
+    handleFirestoreError(error, OperationType.GET, path);
   });
 }
 
 export async function addAppointment(appointment: any) {
-  const docRef = await addDoc(collection(db, 'appointments'), appointment);
-  return docRef.id;
+  const path = 'appointments';
+  try {
+    const newDocRef = doc(collection(db, path));
+    await setDoc(newDocRef, { ...appointment, createdAt: Timestamp.now() });
+    return newDocRef.id;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
 }
 
 export async function updateAppointmentStatus(id: string, status: string) {
-  await updateDoc(doc(db, 'appointments', id), { status });
+  const path = `appointments/${id}`;
+  try {
+    await updateDoc(doc(db, 'appointments', id), { status, updatedAt: Timestamp.now() });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
 }
 
+// Counseling Tracks
 export function subscribeToCounselingTracks(callback: (tracks: any[]) => void) {
-  return onSnapshot(collection(db, 'counseling_tracks'), (snapshot) => {
-    callback(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+  const path = 'counseling_tracks';
+  return onSnapshot(collection(db, path), (snapshot) => {
+    const tracks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    callback(tracks);
   }, (error) => {
-    handleFirestoreError(error, OperationType.LIST, 'counseling_tracks');
+    handleFirestoreError(error, OperationType.GET, path);
   });
 }
 
 export async function addCounselingTrack(track: any) {
-  const docRef = await addDoc(collection(db, 'counseling_tracks'), track);
-  return docRef.id;
+  const path = 'counseling_tracks';
+  try {
+    const newDocRef = doc(collection(db, path));
+    await setDoc(newDocRef, { ...track, createdAt: Timestamp.now() });
+    return newDocRef.id;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
 }
 
 export async function updateCounselingTrack(id: string, track: any) {
-  await updateDoc(doc(db, 'counseling_tracks', id), track);
+  const path = `counseling_tracks/${id}`;
+  try {
+    await updateDoc(doc(db, 'counseling_tracks', id), { ...track, updatedAt: Timestamp.now() });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function seedDummyData() {
+  return true;
 }

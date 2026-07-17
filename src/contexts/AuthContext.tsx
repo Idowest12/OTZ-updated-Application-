@@ -1,23 +1,21 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { 
+  onAuthStateChanged, 
+  signInWithPopup, 
+  signOut,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
+  User as FirebaseUser
+} from 'firebase/auth';
+import { auth, googleProvider, db } from '../firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
-const firebaseConfig = {
-  apiKey: "AIzaSyBRbymmmusPZPXgFvsMU0FAI3vLsTeSQ4w",
-  authDomain: "otz-dummy-system.firebaseapp.com",
-  projectId: "otz-dummy-system",
-  storageBucket: "otz-dummy-system.firebasestorage.app",
-  messagingSenderId: "968979776916",
-  appId: "1:968979776916:web:cd7a569ef66f726dbd7b81"
-};
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-
-interface User {
+export interface User {
   uid: string;
   email: string;
   displayName: string;
+  photoURL?: string;
   role: string;
 }
 
@@ -25,7 +23,10 @@ interface AuthContextType {
   user: User | null;
   isAdmin: boolean;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  isAuthenticating: boolean;
+  loginWithGoogle: () => Promise<void>;
+  loginWithEmail: (email: string, password: string) => Promise<void>;
+  signUpWithEmail: (email: string, password: string, displayName: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -35,17 +36,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        setUser({
-          uid: firebaseUser.uid,
-          email: firebaseUser.email || '',
-          displayName: firebaseUser.displayName || 'User',
-          role: 'admin' // hardcoded for now just to give access
-        });
-        setIsAdmin(true);
+        try {
+          const userDocRef = doc(db, 'users', firebaseUser.uid);
+          const userSnap = await getDoc(userDocRef);
+          
+          let role = 'staff'; // default role
+          if (firebaseUser.email === 'admin@otzclinic.com') {
+            role = 'admin';
+          }
+          
+          if (userSnap.exists()) {
+            role = userSnap.data().role || role;
+          } else {
+            // Save initial user profile if it doesn't exist
+            await setDoc(userDocRef, {
+              uid: firebaseUser.uid,
+              email: firebaseUser.email || '',
+              displayName: firebaseUser.displayName || '',
+              photoURL: firebaseUser.photoURL || '',
+              role: role,
+              createdAt: new Date().toISOString(),
+              lastLogin: new Date().toISOString()
+            });
+          }
+
+          const currentUser: User = {
+            uid: firebaseUser.uid,
+            email: firebaseUser.email || '',
+            displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+            photoURL: firebaseUser.photoURL || '',
+            role,
+          };
+          
+          setUser(currentUser);
+          setIsAdmin(role === 'admin');
+        } catch (error) {
+          console.error("Error loading user profile from Firestore:", error);
+          const currentUser: User = {
+            uid: firebaseUser.uid,
+            email: firebaseUser.email || '',
+            displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+            photoURL: firebaseUser.photoURL || '',
+            role: firebaseUser.email === 'admin@otzclinic.com' ? 'admin' : 'staff',
+          };
+          setUser(currentUser);
+          setIsAdmin(currentUser.role === 'admin');
+        }
       } else {
         setUser(null);
         setIsAdmin(false);
@@ -56,24 +97,68 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const loginWithGoogle = async () => {
+    if (isAuthenticating) return;
+    setIsAuthenticating(true);
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error) {
+      console.error("Google Auth login failed:", error);
+      throw error;
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
+
+  const loginWithEmail = async (email: string, password: string) => {
+    if (isAuthenticating) return;
+    setIsAuthenticating(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-    } catch (error: any) {
-      if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential' || error.code === 'auth/invalid-login-credentials') {
-        await createUserWithEmailAndPassword(auth, email, password);
-      } else {
-        throw error;
+    } catch (error) {
+      console.error("Email login failed:", error);
+      throw error;
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
+
+  const signUpWithEmail = async (email: string, password: string, displayName: string) => {
+    if (isAuthenticating) return;
+    setIsAuthenticating(true);
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      if (userCredential.user) {
+        await updateProfile(userCredential.user, { displayName });
       }
+    } catch (error) {
+      console.error("Email signup failed:", error);
+      throw error;
+    } finally {
+      setIsAuthenticating(false);
     }
   };
 
   const logout = async () => {
-    await signOut(auth);
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error("Google Auth logout failed:", error);
+      throw error;
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAdmin, loading, login, logout }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      isAdmin, 
+      loading, 
+      isAuthenticating,
+      loginWithGoogle, 
+      loginWithEmail,
+      signUpWithEmail,
+      logout 
+    }}>
       {children}
     </AuthContext.Provider>
   );
@@ -86,4 +171,3 @@ export function useAuth() {
   }
   return context;
 }
-

@@ -20,7 +20,7 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(cors());
-  app.use(express.json());
+  app.use(express.json({ limit: '50mb' }));
 
   // Initialize SQLite
   const db = new Database('./database.sqlite');
@@ -71,13 +71,13 @@ async function startServer() {
   `);
 
   // Create default admin if not exists
-  const adminExists = db.prepare('SELECT * FROM users WHERE email = ?').get('admin@local.com');
+  const adminExists = db.prepare('SELECT * FROM users WHERE email = ?').get('admin@otzclinic.com');
   if (!adminExists) {
-    const hashedPassword = await bcrypt.hash('admin123', 10);
+    const hashedPassword = await bcrypt.hash('admin123456', 10);
     const now = new Date().toISOString();
     db.prepare(
       'INSERT INTO users (id, email, password, displayName, role, createdAt, lastLogin) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run(uuidv4(), 'admin@local.com', hashedPassword, 'Local Admin', 'admin', now, now);
+    ).run(uuidv4(), 'admin@otzclinic.com', hashedPassword, 'Local Admin', 'admin', now, now);
   }
 
   // Auth Routes
@@ -108,6 +108,74 @@ async function startServer() {
       res.json({ user });
     } catch (err) {
       res.status(401).json({ error: 'Invalid token' });
+    }
+  });
+
+  // Export Data Endpoint
+  app.get('/api/export', async (req, res) => {
+    try {
+      const data = {
+        patients: db.prepare('SELECT * FROM patients').all(),
+        visits: db.prepare('SELECT * FROM visits').all(),
+        appointments: db.prepare('SELECT * FROM appointments').all(),
+        counseling_tracks: db.prepare('SELECT * FROM counseling_tracks').all(),
+        activity_logs: db.prepare('SELECT * FROM activity_logs').all()
+      };
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: 'Export failed: ' + err.message });
+    }
+  });
+
+  // Import Data Endpoint
+  app.post('/api/import', async (req, res) => {
+    try {
+      const { patients, visits, appointments, counseling_tracks, activity_logs } = req.body;
+      
+      const insertData = (collectionName: string, items: any[], insertQuery: string) => {
+        if (!items || !items.length) return;
+        const stmt = db.prepare(insertQuery);
+        const insertMany = db.transaction((rows) => {
+          for (const row of rows) {
+            try {
+              if (collectionName === 'patients') {
+                stmt.run(row.id, row.data, row.createdAt, row.updatedAt);
+              } else if (collectionName === 'visits' || collectionName === 'appointments') {
+                stmt.run(row.id, row.patientId, row.data, row.date, row.createdAt);
+              } else if (collectionName === 'counseling_tracks') {
+                stmt.run(row.id, row.patientId, row.data, row.completed || 0, row.createdAt);
+              } else if (collectionName === 'activity_logs') {
+                stmt.run(row.id, row.data, row.timestamp);
+              }
+            } catch (e: any) {
+              if (e.message.includes('UNIQUE constraint failed')) {
+                // Skip existing logic handled mostly by IGNORE if supported or we can just ignore
+                console.log(`Duplicate found for ${row.id} in ${collectionName}`);
+              } else {
+                throw e;
+              }
+            }
+          }
+        });
+        insertMany(items);
+      };
+
+      if (patients) insertData('patients', patients, 'INSERT OR REPLACE INTO patients (id, data, createdAt, updatedAt) VALUES (?, ?, ?, ?)');
+      if (visits) insertData('visits', visits, 'INSERT OR REPLACE INTO visits (id, patientId, data, date, createdAt) VALUES (?, ?, ?, ?, ?)');
+      if (appointments) insertData('appointments', appointments, 'INSERT OR REPLACE INTO appointments (id, patientId, data, date, createdAt) VALUES (?, ?, ?, ?, ?)');
+      if (counseling_tracks) insertData('counseling_tracks', counseling_tracks, 'INSERT OR REPLACE INTO counseling_tracks (id, patientId, data, completed, createdAt) VALUES (?, ?, ?, ?, ?)');
+      if (activity_logs) insertData('activity_logs', activity_logs, 'INSERT OR REPLACE INTO activity_logs (id, data, timestamp) VALUES (?, ?, ?)');
+
+      res.json({ message: 'Import successful' });
+      
+      // Notify clients
+      io.emit('patients_update', []); // Client re-fetches upon this usually, or we can broadcast real updates
+      // The local socket logic sends the full array on next subscribe. We can trigger a quick reload signal
+      io.emit('data_imported');
+
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: 'Import failed: ' + err.message });
     }
   });
 

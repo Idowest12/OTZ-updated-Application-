@@ -27,7 +27,7 @@ import { Modal } from './ui/Modal';
 interface ViralLoadManagerProps {
   patients: Patient[];
   tracks: CounselingTrack[];
-  onRecordVl: (patient: Patient) => void;
+  onRecordVl: (patient: Patient, type?: string) => void;
 }
 
 export function ViralLoadManager({ patients, tracks, onRecordVl }: ViralLoadManagerProps) {
@@ -346,7 +346,7 @@ export function ViralLoadManager({ patients, tracks, onRecordVl }: ViralLoadMana
               <button
                 key={patient.id}
                 onClick={() => {
-                  onRecordVl(patient);
+                  onRecordVl(patient, 'Drug Pickup & VL Test');
                   setIsPatientSelectOpen(false);
                 }}
                 className="flex w-full items-center justify-between rounded-xl border border-slate-100 p-4 text-left transition-all hover:border-indigo-100 hover:bg-indigo-50/50"

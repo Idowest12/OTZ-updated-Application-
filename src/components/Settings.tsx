@@ -11,9 +11,13 @@ import {
   Sun, 
   Monitor,
   Check,
-  Palette
+  Palette,
+  Database,
+  Download,
+  Upload
 } from 'lucide-react';
 import { cn } from '../utils';
+import { Button } from './ui/Button';
 
 export function Settings() {
   const { theme, fontSize, setTheme, setFontSize } = useSettings();
@@ -29,15 +33,111 @@ export function Settings() {
     { id: 'dark', label: 'Dark Mode', icon: Moon, description: 'High contrast black interface' },
   ] as const;
 
+  const handleExport = async () => {
+    try {
+      const res = await fetch('/api/export');
+      if (!res.ok) throw new Error('Failed to export data');
+      const data = await res.json();
+      
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `otz-clinic-backup-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error(error);
+      alert('Error exporting data.');
+    }
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!confirm('Are you sure you want to import this data? Existing conflicting records will be updated.')) {
+      e.target.value = '';
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      const parsedData = JSON.parse(text);
+
+      const res = await fetch('/api/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(parsedData)
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to import data');
+      }
+
+      alert('Data imported successfully! The dashboard will reflect changes shortly.');
+      window.location.reload();
+    } catch (error: any) {
+      console.error(error);
+      alert('Error importing data: ' + error.message);
+    } finally {
+      e.target.value = '';
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Settings</h1>
-        <p className="text-slate-500 dark:text-slate-400">Personalize your experience and interface preferences.</p>
+        <p className="text-slate-500 dark:text-slate-400">Personalize your experience and manage clinic data.</p>
       </div>
 
       <div className="grid grid-cols-1 gap-8">
+        {/* Data Management Section */}
+        <section className="space-y-4">
+          <div className="flex items-center gap-2 text-slate-900 dark:text-white font-semibold">
+            <Database className="h-5 w-5 text-indigo-600" />
+            <h2>Data Management</h2>
+          </div>
+          <Card className="p-6 dark:bg-slate-900 dark:border-slate-800">
+            <div className="space-y-6">
+              <div>
+                <h3 className="font-medium text-slate-900 dark:text-white mb-2">Export Data</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+                  Download a complete backup of all clinic records, including patients, visits, appointments, and counseling tracks. You can use this file to import into another OTZ clinic instance.
+                </p>
+                <Button onClick={handleExport} className="gap-2">
+                  <Download className="h-4 w-4" /> Export JSON Backup
+                </Button>
+              </div>
+
+              <div className="border-t border-slate-100 dark:border-slate-800 pt-6">
+                <h3 className="font-medium text-slate-900 dark:text-white mb-2">Import Data</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+                  Restore or merge data from a previously exported JSON backup file. Current records with matching IDs will be overwritten.
+                </p>
+                <div className="relative inline-block">
+                  <input 
+                    type="file" 
+                    accept=".json" 
+                    onChange={handleImport} 
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    title="Choose backup file"
+                  />
+                  <Button variant="outline" className="gap-2 w-auto pointer-events-none">
+                    <Upload className="h-4 w-4" /> Import from JSON
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </section>
+
         {/* Appearance Section */}
+
         <section className="space-y-4">
           <div className="flex items-center gap-2 text-slate-900 dark:text-white font-semibold">
             <Palette className="h-5 w-5 text-indigo-600" />
