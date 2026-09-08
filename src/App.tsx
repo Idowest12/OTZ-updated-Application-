@@ -21,8 +21,10 @@ import { AppointmentForm } from './components/AppointmentForm';
 import { Patient, Visit, CounselingTrack, Appointment } from './types';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from './contexts/AuthContext';
+import { useSettings } from './contexts/SettingsContext';
 import { Button } from './components/ui/Button';
-import { Activity } from 'lucide-react';
+import { Activity, Eye, EyeOff, ShieldCheck, UserCheck, Lock } from 'lucide-react';
+import { cn } from './utils';
 import { 
   subscribeToPatients, 
   addPatient, 
@@ -40,6 +42,7 @@ import {
 export default function App() {
   const { 
     user, 
+    isAdmin,
     loading, 
     isAuthenticating, 
     loginWithGoogle, 
@@ -47,6 +50,7 @@ export default function App() {
     signUpWithEmail, 
     logout 
   } = useAuth();
+  const { privacyMode, togglePrivacyMode } = useSettings();
   
   const [authTab, setAuthTab] = useState<'google' | 'email'>('google');
   const [email, setEmail] = useState('');
@@ -413,8 +417,13 @@ export default function App() {
         await addPatient(data);
       }
       setIsPatientModalOpen(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving patient:', error);
+      if (error?.message?.includes('DUPLICATE_CLINIC_NUMBER')) {
+        alert(error.message.replace('DUPLICATE_CLINIC_NUMBER: ', ''));
+      } else {
+        alert('Failed to save patient record. Please check the details and try again.');
+      }
     }
   };
 
@@ -502,23 +511,82 @@ export default function App() {
         currentView={currentView}
         onViewChange={setCurrentView}
         onLogout={logout}
+        appointments={appointments}
       />
 
-      <main className="flex-1 overflow-y-auto px-8 py-8">
-        <div className="mx-auto max-w-7xl">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={currentView}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 px-8 backdrop-blur-xs">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-bold tracking-wide uppercase text-slate-500 dark:text-slate-400">
+              {currentView.replace('-', ' ')}
+            </span>
+            {isAdmin && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 dark:bg-indigo-950/50 px-3 py-1 text-xs font-semibold text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60 shadow-2xs">
+                <ShieldCheck className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                Superuser Mode (Full Access Across Departments)
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-4">
+            {/* Privacy Mode Toggle */}
+            <button
+              onClick={togglePrivacyMode}
+              title="Toggle Privacy Mode to mask patient names, phone numbers, and IDs on public screens"
+              className={cn(
+                "flex items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs font-semibold transition-all duration-200 border shadow-2xs cursor-pointer",
+                privacyMode
+                  ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-800 hover:bg-amber-500/20"
+                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200/70"
+              )}
             >
-              {renderView()}
-            </motion.div>
-          </AnimatePresence>
-        </div>
-      </main>
+              {privacyMode ? (
+                <>
+                  <EyeOff className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  <span>Privacy Mode: ON (PII Masked)</span>
+                </>
+              ) : (
+                <>
+                  <Eye className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+                  <span>Privacy Mode: OFF</span>
+                </>
+              )}
+            </button>
+
+            {/* User identity info */}
+            <div className="flex items-center gap-2 border-l border-slate-200 dark:border-slate-800 pl-4">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-bold text-xs">
+                {user?.displayName?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || 'U'}
+              </div>
+              <div className="hidden md:block text-left">
+                <p className="text-xs font-semibold text-slate-900 dark:text-white leading-tight">
+                  {user?.displayName || user?.email?.split('@')[0]}
+                </p>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
+                  {user?.role?.toUpperCase() || (isAdmin ? 'ADMIN' : 'STAFF')}
+                </p>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-y-auto px-8 py-8">
+          <div className="mx-auto max-w-7xl">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={currentView}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+              >
+                {renderView()}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </main>
+      </div>
 
       <Modal
         isOpen={isPatientModalOpen}

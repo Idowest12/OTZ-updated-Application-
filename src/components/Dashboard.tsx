@@ -57,11 +57,15 @@ export function Dashboard({ patients, appointments, visits, tracks = [] }: { pat
   const upcomingVisits = appointments.filter(a => a.status === 'Pending').length;
   const pendingCounseling = tracks.filter(t => !t.completed).length;
 
-  // Find patients who have visited but don't have a VL result
+  // Find patients who are Active but do not have a Viral Load result recorded, or whose result is pending
   const pendingVlPatients = patients.filter(p => 
     p.ltfuStatus === 'Active' && 
-    p.lastVisitDate && 
-    (p.lastVlResult === undefined || p.lastVlResult === null)
+    (
+      p.lastVlResult === undefined || 
+      p.lastVlResult === null || 
+      p.vlSuppressed === undefined || 
+      p.vlSuppressed === null
+    )
   );
 
   // Calculate monthly visits for the last 6 months

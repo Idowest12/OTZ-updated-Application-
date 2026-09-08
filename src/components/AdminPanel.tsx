@@ -9,6 +9,7 @@ import { Button } from './ui/Button';
 import { ActivityLog } from '../types';
 import { 
   subscribeToActivityLogs, 
+  subscribeToAuditLogs,
   cleanupOldLogs, 
   wipeAllTestData, 
   clearAllActivityLogs,
@@ -18,7 +19,8 @@ import {
   graduatePatientsOver25,
   subscribeToUsers,
   updateUserRole,
-  seedDummyData
+  seedDummyData,
+  exportDatabaseBackup
 } from '../services/firestoreService';
 import { UserProfile } from '../types';
 import { formatDate } from '../utils';
@@ -46,6 +48,8 @@ import { useAuth } from '../contexts/AuthContext';
 export function AdminPanel() {
   const { isAdmin } = useAuth();
   const [logs, setLogs] = useState<ActivityLog[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'activity' | 'audit'>('activity');
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<ActivityLog['type'] | 'All'>('All');
@@ -66,6 +70,7 @@ export function AdminPanel() {
   const [isGraduating, setIsGraduating] = useState(false);
   const [isWiping, setIsWiping] = useState(false);
   const [isSeeding, setIsSeeding] = useState(false);
+  const [isBackingUp, setIsBackingUp] = useState(false);
   const [wipeConfirmText, setWipeConfirmText] = useState('');
 
   // Hardcoded for now as per AuthContext
@@ -76,12 +81,17 @@ export function AdminPanel() {
       setLogs(data);
     });
     
+    const unsubscribeAudit = subscribeToAuditLogs((data) => {
+      setAuditLogs(data);
+    });
+
     const unsubscribeUsers = subscribeToUsers((data) => {
       setUsers(data);
     });
     
     return () => {
       unsubscribeLogs();
+      unsubscribeAudit();
       unsubscribeUsers();
     };
   }, []);
@@ -209,7 +219,7 @@ export function AdminPanel() {
     }
   };
 
-  const handleRoleChange = async (uid: string, newRole: 'admin' | 'staff') => {
+  const handleRoleChange = async (uid: string, newRole: 'admin' | 'clinician' | 'lab_tech' | 'receptionist' | 'counselor' | 'staff') => {
     try {
       await updateUserRole(uid, newRole);
     } catch (error) {
@@ -255,6 +265,31 @@ export function AdminPanel() {
     }
   };
 
+  const handleBackup = async () => {
+    setIsBackingUp(true);
+    try {
+      const backupData = await exportDatabaseBackup();
+      const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(
+        JSON.stringify(backupData, null, 2)
+      )}`;
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute('href', jsonString);
+      downloadAnchor.setAttribute(
+        'download',
+        `database_backup_${new Date().toISOString().split('T')[0]}.json`
+      );
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      alert('Database snapshot exported successfully as JSON!');
+    } catch (error) {
+      console.error(error);
+      alert('Failed to backup database. See console for details.');
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -269,34 +304,73 @@ export function AdminPanel() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2 space-y-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <h3 className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-              <History className="h-5 w-5 text-slate-400" />
-              System Activity Log
-            </h3>
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search logs..."
-                  className="h-9 w-full rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-9 pr-4 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 sm:w-64 text-slate-900 dark:text-white"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setActiveTab('activity')}
+                  className={cn(
+                    "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
+                    activeTab === 'activity'
+                      ? "bg-indigo-600 text-white shadow-xs"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200"
+                  )}
+                >
+                  <History className="h-4 w-4" />
+                  Activity Logs ({logs.length})
+                </button>
+                <button
+                  onClick={() => setActiveTab('audit')}
+                  className={cn(
+                    "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
+                    activeTab === 'audit'
+                      ? "bg-emerald-600 text-white shadow-xs"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200"
+                  )}
+                >
+                  <ShieldCheck className="h-4 w-4" />
+                  Immutable Audit Trail ({auditLogs.length})
+                </button>
               </div>
-              <select
-                className="h-9 rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-900 dark:text-white"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value as any)}
-              >
-                <option value="All">All Types</option>
-                <option value="Patient">Patient</option>
-                <option value="Visit">Visit</option>
-                <option value="Counseling">Counseling</option>
-                <option value="System">System</option>
-              </select>
+
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search logs..."
+                    className="h-9 w-full rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-9 pr-4 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 sm:w-56 text-slate-900 dark:text-white"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
+                {activeTab === 'activity' && (
+                  <select
+                    className="h-9 rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-900 dark:text-white"
+                    value={filter}
+                    onChange={(e) => setFilter(e.target.value as any)}
+                  >
+                    <option value="All">All Types</option>
+                    <option value="Patient">Patient</option>
+                    <option value="Visit">Visit</option>
+                    <option value="Counseling">Counseling</option>
+                    <option value="System">System</option>
+                  </select>
+                )}
+              </div>
             </div>
+
+            {activeTab === 'audit' && (
+              <div className="flex items-center justify-between rounded-lg bg-emerald-50 dark:bg-emerald-950/30 p-3 border border-emerald-200/60 dark:border-emerald-900/40 text-emerald-800 dark:text-emerald-300 text-xs font-medium">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span><strong>Immutable Append-Only Mode Enabled:</strong> Audit records cannot be edited, modified, or deleted by any administrative account.</span>
+                </div>
+                <span className="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">
+                  HIPAA Compliant
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="relative overflow-hidden rounded-xl border border-slate-100 dark:border-slate-800">
@@ -305,42 +379,80 @@ export function AdminPanel() {
                 <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   <tr>
                     <th className="px-4 py-3">Timestamp</th>
-                    <th className="px-4 py-3">User</th>
-                    <th className="px-4 py-3">Action</th>
-                    <th className="px-4 py-3">Type</th>
+                    <th className="px-4 py-3">User & Role</th>
+                    <th className="px-4 py-3">Action Details</th>
+                    <th className="px-4 py-3">{activeTab === 'audit' ? 'Resource' : 'Type'}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
-                  {filteredLogs.length > 0 ? (
-                    filteredLogs.map((log) => (
-                      <tr key={log.id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                        <td className="whitespace-nowrap px-4 py-3 text-slate-500 dark:text-slate-400">
-                          {log.timestamp?.toDate ? formatDate(log.timestamp.toDate().toISOString()) : 'N/A'}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="font-medium text-slate-900 dark:text-white">{log.userName}</div>
-                          <div className="text-[10px] text-slate-400 dark:text-slate-500">{log.userId.slice(0, 8)}...</div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="font-medium text-slate-900 dark:text-white">{log.action}</div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">{log.details}</div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={cn(
-                            "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                            getTypeColor(log.type)
-                          )}>
-                            {log.type}
-                          </span>
+                  {activeTab === 'activity' ? (
+                    filteredLogs.length > 0 ? (
+                      filteredLogs.map((log) => (
+                        <tr key={log.id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                          <td className="whitespace-nowrap px-4 py-3 text-slate-500 dark:text-slate-400 text-xs font-mono">
+                            {log.timestamp?.toDate ? formatDate(log.timestamp.toDate().toISOString()) : 'N/A'}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-slate-900 dark:text-white">{log.userName}</div>
+                            <div className="text-[10px] text-slate-400 dark:text-slate-500">{log.userId.slice(0, 8)}...</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-slate-900 dark:text-white">{log.action}</div>
+                            <div className="text-xs text-slate-500 dark:text-slate-400">{log.details}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={cn(
+                              "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                              getTypeColor(log.type)
+                            )}>
+                              {log.type}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-12 text-center text-slate-500 dark:text-slate-400">
+                          No activity logs found matching your criteria.
                         </td>
                       </tr>
-                    ))
+                    )
                   ) : (
-                    <tr>
-                      <td colSpan={4} className="px-4 py-12 text-center text-slate-500 dark:text-slate-400">
-                        No activity logs found matching your criteria.
-                      </td>
-                    </tr>
+                    auditLogs.length > 0 ? (
+                      auditLogs
+                        .filter(a => 
+                          !search || 
+                          a.userEmail?.toLowerCase().includes(search.toLowerCase()) || 
+                          a.action?.toLowerCase().includes(search.toLowerCase()) || 
+                          a.details?.toLowerCase().includes(search.toLowerCase())
+                        )
+                        .map((audit) => (
+                          <tr key={audit.id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                            <td className="whitespace-nowrap px-4 py-3 text-slate-500 dark:text-slate-400 text-xs font-mono">
+                              {audit.timestamp?.toDate ? formatDate(audit.timestamp.toDate().toISOString()) : 'N/A'}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="font-medium text-slate-900 dark:text-white">{audit.userEmail || audit.userId}</div>
+                              <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">{audit.userRole || 'STAFF'}</div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="font-medium text-slate-900 dark:text-white">{audit.action}</div>
+                              <div className="text-xs text-slate-500 dark:text-slate-400">{audit.details}</div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider border border-emerald-200 dark:border-emerald-800">
+                                {audit.resourceType || 'COLLECTION'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))
+                    ) : (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-12 text-center text-slate-500 dark:text-slate-400">
+                          No immutable audit trail records found.
+                        </td>
+                      </tr>
+                    )
                   )}
                 </tbody>
               </table>
@@ -403,6 +515,15 @@ export function AdminPanel() {
               >
                 <Download className="h-4 w-4" />
                 Export Full Audit Log
+              </Button>
+              <Button 
+                variant="outline" 
+                className="justify-start gap-2 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-700 border-indigo-100 dark:border-indigo-900/30 font-bold"
+                onClick={handleBackup}
+                disabled={isBackingUp}
+              >
+                <Database className="h-4 w-4" />
+                {isBackingUp ? 'Generating Backup...' : 'Database Backup (JSON)'}
               </Button>
               <Button 
                 variant="outline" 
@@ -700,13 +821,17 @@ export function AdminPanel() {
                     </span>
                     
                     <select
-                      className="rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2 py-1 text-xs font-medium text-slate-600 dark:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       value={user.role}
-                      onChange={(e) => handleRoleChange(user.uid, e.target.value as 'admin' | 'staff')}
-                      disabled={adminEmails.includes(user.email)} // Prevent changing hardcoded admins
+                      onChange={(e) => handleRoleChange(user.uid, e.target.value as any)}
+                      disabled={adminEmails.includes(user.email)} // Prevent changing hardcoded super admins
                     >
-                      <option value="staff">Staff</option>
-                      <option value="admin">Admin</option>
+                      <option value="admin">Admin (Superuser)</option>
+                      <option value="clinician">Clinician</option>
+                      <option value="lab_tech">Lab Technologist</option>
+                      <option value="receptionist">Receptionist</option>
+                      <option value="counselor">Counselor</option>
+                      <option value="staff">General Staff</option>
                     </select>
                   </div>
                 </div>

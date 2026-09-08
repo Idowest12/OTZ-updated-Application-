@@ -26,11 +26,25 @@ interface SidebarProps {
   currentView: View;
   onViewChange: (view: View) => void;
   onLogout: () => void;
+  appointments?: any[];
 }
 
-export function Sidebar({ currentView, onViewChange, onLogout }: SidebarProps) {
+export function Sidebar({ currentView, onViewChange, onLogout, appointments = [] }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const { isAdmin } = useAuth();
+
+  const getTodayDateString = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const todayStr = getTodayDateString();
+  const todayPendingCount = appointments.filter(
+    (a) => a.status === 'Pending' && a.date === todayStr
+  ).length;
 
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -78,14 +92,29 @@ export function Sidebar({ currentView, onViewChange, onLogout }: SidebarProps) {
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
               )}
             >
-              <Icon
-                className={cn(
-                  'h-5 w-5 shrink-0 transition-colors',
-                  isActive ? 'text-indigo-600' : 'text-slate-400 group-hover:text-slate-600'
+              <div className="relative flex items-center justify-center">
+                <Icon
+                  className={cn(
+                    'h-5 w-5 shrink-0 transition-colors',
+                    isActive ? 'text-indigo-600' : 'text-slate-400 group-hover:text-slate-600'
+                  )}
+                />
+                {item.id === 'appointments' && todayPendingCount > 0 && isCollapsed && (
+                  <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white ring-2 ring-white dark:ring-slate-900 animate-pulse">
+                    {todayPendingCount}
+                  </span>
                 )}
-              />
-              {!isCollapsed && <span>{item.label}</span>}
-              {isActive && !isCollapsed && (
+              </div>
+              
+              {!isCollapsed && <span className="truncate">{item.label}</span>}
+              
+              {item.id === 'appointments' && todayPendingCount > 0 && !isCollapsed && (
+                <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white ring-2 ring-white dark:ring-slate-900 shadow-sm animate-pulse">
+                  {todayPendingCount}
+                </span>
+              )}
+              
+              {isActive && !isCollapsed && item.id !== 'appointments' && (
                 <div className="ml-auto h-1.5 w-1.5 rounded-full bg-indigo-600" />
               )}
             </button>

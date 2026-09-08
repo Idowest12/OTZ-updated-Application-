@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 
 const firebaseConfig = {
@@ -18,6 +18,16 @@ const databaseId = import.meta.env.VITE_FIREBASE_DATABASE_ID || "ai-studio-281f1
 // Initialize Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 export const db = getFirestore(app, databaseId);
+
+// Enable Firestore IndexedDB persistent offline cache
+enableIndexedDbPersistence(db).catch((err) => {
+  if (err.code === 'failed-precondition') {
+    console.warn('Firestore offline persistence failed: Multiple tabs open');
+  } else if (err.code === 'unimplemented') {
+    console.warn('Firestore offline persistence not supported by browser');
+  }
+});
+
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 

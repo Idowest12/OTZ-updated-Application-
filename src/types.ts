@@ -30,7 +30,7 @@ export interface Visit {
   id: string;
   patientId: string;
   date: string;
-  type: 'Drug Pickup & VL Test' | 'Drug Pickup (Proxy)' | 'Clinical Review' | 'Counselling' | 'Other' | 'Transfer Out' | 'Reactivation';
+  type: 'Drug Pickup & VL Test' | 'Drug Pickup (Proxy)' | 'Drug Pickup (Client)' | 'Clinical Review' | 'Counselling' | 'Other' | 'Transfer Out' | 'Reactivation';
   notes?: string;
   vlResult?: number;
   nextAppointmentDate?: string;
@@ -73,11 +73,16 @@ export interface CounselingTrack {
 export interface ActivityLog {
   id?: string;
   userId: string;
+  userEmail?: string;
   userName: string;
+  userRole?: string;
   action: string;
+  resourceType?: string;
+  resourceId?: string;
   details: string;
   timestamp: any; // Firestore Timestamp
-  type: 'Patient' | 'Visit' | 'Counseling' | 'System';
+  type: 'Patient' | 'Visit' | 'Counseling' | 'System' | 'Audit';
+  ipAddress?: string;
 }
 
 export interface DashboardStats {
@@ -97,7 +102,7 @@ export interface UserProfile {
   email: string;
   displayName: string;
   photoURL: string;
-  role: 'admin' | 'staff';
+  role: 'admin' | 'clinician' | 'lab_tech' | 'receptionist' | 'counselor' | 'staff';
   lastLogin: string;
   createdAt: string;
 }

@@ -11,8 +11,10 @@ type FontSize = 'small' | 'medium' | 'large';
 interface SettingsContextType {
   theme: Theme;
   fontSize: FontSize;
+  privacyMode: boolean;
   setTheme: (theme: Theme) => void;
   setFontSize: (size: FontSize) => void;
+  togglePrivacyMode: () => void;
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
@@ -27,6 +29,19 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     const saved = localStorage.getItem('otz-font-size');
     return (saved as FontSize) || 'medium';
   });
+
+  const [privacyMode, setPrivacyMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem('otz-privacy-mode');
+    return saved === 'true';
+  });
+
+  const togglePrivacyMode = () => {
+    setPrivacyMode((prev) => {
+      const next = !prev;
+      localStorage.setItem('otz-privacy-mode', String(next));
+      return next;
+    });
+  };
 
   useEffect(() => {
     localStorage.setItem('otz-theme', theme);
@@ -55,7 +70,16 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   }, [fontSize]);
 
   return (
-    <SettingsContext.Provider value={{ theme, fontSize, setTheme, setFontSize }}>
+    <SettingsContext.Provider
+      value={{
+        theme,
+        fontSize,
+        privacyMode,
+        setTheme,
+        setFontSize,
+        togglePrivacyMode,
+      }}
+    >
       <div className={theme === 'dark' ? 'dark' : ''}>
         {children}
       </div>

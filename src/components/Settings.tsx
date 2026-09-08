@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../utils';
 import { Button } from './ui/Button';
+import { exportDatabaseBackup, importDatabaseBackup } from '../services/firestoreService';
 
 export function Settings() {
   const { theme, fontSize, setTheme, setFontSize } = useSettings();
@@ -35,9 +36,21 @@ export function Settings() {
 
   const handleExport = async () => {
     try {
-      const res = await fetch('/api/export');
-      if (!res.ok) throw new Error('Failed to export data');
-      const data = await res.json();
+      let data: any = null;
+      
+      // 1. Try exporting directly from Firestore (works on Vercel / Cloud)
+      try {
+        data = await exportDatabaseBackup();
+      } catch (firestoreErr) {
+        console.warn('Firestore direct export failed or not available, falling back to /api/export:', firestoreErr);
+      }
+
+      // 2. Fallback to local server API (works on local SQLite server)
+      if (!data) {
+        const res = await fetch('/api/export');
+        if (!res.ok) throw new Error('Failed to export data from server');
+        data = await res.json();
+      }
       
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -48,9 +61,9 @@ export function Settings() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert('Error exporting data.');
+      alert('Error exporting data: ' + (error?.message || 'Unknown error'));
     }
   };
 
@@ -67,15 +80,30 @@ export function Settings() {
       const text = await file.text();
       const parsedData = JSON.parse(text);
 
-      const res = await fetch('/api/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(parsedData)
-      });
+      let imported = false;
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to import data');
+      // 1. Try importing directly into Firestore (works on Vercel / Cloud)
+      try {
+        const res = await importDatabaseBackup(parsedData);
+        if (res && res.success) {
+          imported = true;
+        }
+      } catch (firestoreErr) {
+        console.warn('Firestore direct import failed or not available, falling back to /api/import:', firestoreErr);
+      }
+
+      // 2. Fallback to local server API (works on local SQLite server)
+      if (!imported) {
+        const res = await fetch('/api/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(parsedData)
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json();
+          throw new Error(errorData.error || 'Failed to import data');
+        }
       }
 
       alert('Data imported successfully! The dashboard will reflect changes shortly.');

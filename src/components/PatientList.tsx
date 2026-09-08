@@ -25,6 +25,8 @@ import {
 import { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
+import { maskName, maskPhone, maskId } from '../utils';
 
 interface PatientListProps {
   patients: Patient[];
@@ -52,6 +54,7 @@ export function PatientList({
   onActivate
 }: PatientListProps) {
   const { isAdmin } = useAuth();
+  const { privacyMode } = useSettings();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'All' | 'Active' | 'LTFU' | 'Graduating' | 'Transferred'>('All');
   const [importStatus, setImportStatus] = useState<{ type: 'idle' | 'loading' | 'success' | 'error', message: string }>({ type: 'idle', message: '' });
@@ -281,7 +284,6 @@ export function PatientList({
             enrollmentDate: parseExcelDate(row[colMap.enrollmentDate]) || new Date().toISOString().split('T')[0],
             dateOfBirth: (colMap.dateOfBirth !== -1 ? parseExcelDate(row[colMap.dateOfBirth]) : null) || null,
             ltfuStatus: status,
-            vlSuppressed: true,
           };
 
           if (idx < 2) {
@@ -561,7 +563,7 @@ export function PatientList({
                       onClick={() => onViewDetails(patient)}
                       className="hover:text-indigo-600 hover:underline"
                     >
-                      {patient.clinicNumber}
+                      {maskId(patient.clinicNumber, privacyMode)}
                     </button>
                   </td>
                   <td className="whitespace-nowrap px-6 py-4">
@@ -570,7 +572,7 @@ export function PatientList({
                         onClick={() => onViewDetails(patient)}
                         className="text-left font-medium text-slate-900 hover:text-indigo-600 hover:underline"
                       >
-                        {patient.firstName} {patient.lastName}
+                        {maskName(`${patient.firstName} ${patient.lastName}`, privacyMode)}
                       </button>
                       <span className="text-xs text-slate-500">
                         Enrolled: {formatDate(patient.enrollmentDate)}
@@ -578,7 +580,7 @@ export function PatientList({
                     </div>
                   </td>
                   <td className="whitespace-nowrap px-6 py-4 text-slate-600">
-                    {patient.phone || 'N/A'}
+                    {maskPhone(patient.phone, privacyMode)}
                   </td>
                   <td className="whitespace-nowrap px-6 py-4 text-slate-600">
                     {patient.age}y / {patient.gender}

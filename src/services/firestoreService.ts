@@ -68,7 +68,33 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Activity Logging Helper
+// Activity & Audit Logging Helpers
+export async function logAuditTrail(
+  action: string,
+  resourceType: string,
+  resourceId: string,
+  details: string
+) {
+  if (!auth.currentUser) return;
+  const path = 'activity_logs';
+  try {
+    const newDocRef = doc(collection(db, path));
+    await setDoc(newDocRef, {
+      userId: auth.currentUser.uid,
+      userEmail: auth.currentUser.email || 'N/A',
+      userName: auth.currentUser.displayName || auth.currentUser.email || 'Unknown User',
+      action,
+      resourceType,
+      resourceId,
+      details,
+      timestamp: Timestamp.now(),
+      type: 'Audit'
+    });
+  } catch (error) {
+    console.warn('Warning: Could not save audit trail entry:', error);
+  }
+}
+
 export async function logActivity(action: string, details: string, type: ActivityLog['type']) {
   if (!auth.currentUser) return;
   const path = 'activity_logs';
@@ -76,6 +102,7 @@ export async function logActivity(action: string, details: string, type: Activit
     const newDocRef = doc(collection(db, path));
     await setDoc(newDocRef, {
       userId: auth.currentUser.uid,
+      userEmail: auth.currentUser.email || 'N/A',
       userName: auth.currentUser.displayName || auth.currentUser.email || 'Unknown User',
       action,
       details,
@@ -83,7 +110,7 @@ export async function logActivity(action: string, details: string, type: Activit
       timestamp: Timestamp.now()
     });
   } catch (error) {
-    console.error('Error logging activity:', error);
+    console.warn('Warning: Could not save activity log:', error);
   }
 }
 
@@ -94,7 +121,20 @@ export function subscribeToActivityLogs(callback: (logs: ActivityLog[]) => void)
     const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityLog));
     callback(logs);
   }, (error) => {
-    handleFirestoreError(error, OperationType.GET, path);
+    console.warn('Activity logs snapshot warning:', error);
+  });
+}
+
+export function subscribeToAuditLogs(callback: (logs: ActivityLog[]) => void) {
+  const path = 'activity_logs';
+  const q = query(collection(db, path), orderBy('timestamp', 'desc'), limit(200));
+  return onSnapshot(q, (snapshot) => {
+    const logs = snapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() } as ActivityLog))
+      .filter(doc => doc.type === 'Audit');
+    callback(logs);
+  }, (error) => {
+    console.warn('Audit logs snapshot warning:', error);
   });
 }
 
@@ -123,7 +163,10 @@ export async function updatePatientVL(patientId: string, vlResult: number, vlDat
   const path = 'patients';
   try {
     const patientRef = doc(db, path, patientId);
-    const vlSuppressed = vlResult < 1000;
+    const patientSnap = await getDoc(patientRef);
+    const patientData = patientSnap.data();
+    
+    const vlSuppressed = vlResult < 50;
     
     await updateDoc(patientRef, {
       lastVlResult: vlResult,
@@ -136,6 +179,36 @@ export async function updatePatientVL(patientId: string, vlResult: number, vlDat
       `Updated VL for patient ID: ${patientId} to ${vlResult} copies/mL`,
       'Patient'
     );
+
+    // If viral load is unsuppressed, enroll in counseling track if not already in one
+    if (vlResult >= 50 && patientData) {
+      const tracksQuery = query(
+        collection(db, 'counseling_tracks'), 
+        where('patientId', '==', patientId),
+        where('completed', '==', false)
+      );
+      const tracksSnapshot = await getDocs(tracksQuery);
+      
+      if (tracksSnapshot.empty) {
+        await addCounselingTrack({
+          patientId,
+          patientName: `${patientData.firstName} ${patientData.lastName}`,
+          clinicNumber: patientData.clinicNumber,
+          startDate: vlDate,
+          vlResult: vlResult,
+          session1: { status: 'Pending' },
+          session2: { status: 'Pending' },
+          session3: { status: 'Pending' },
+          completed: false,
+          nextCounselingDate: null,
+        });
+      } else {
+        const trackId = tracksSnapshot.docs[0].id;
+        await updateCounselingTrack(trackId, {
+          vlResult: vlResult,
+        });
+      }
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -259,7 +332,7 @@ export function subscribeToUsers(callback: (users: UserProfile[]) => void) {
   });
 }
 
-export async function updateUserRole(uid: string, newRole: 'admin' | 'staff') {
+export async function updateUserRole(uid: string, newRole: UserProfile['role']) {
   const path = 'users';
   try {
     const userRef = doc(db, path, uid);
@@ -352,11 +425,22 @@ export function subscribeToPatients(callback: (patients: any[]) => void) {
 export async function addPatient(patient: any) {
   const path = 'patients';
   try {
+    // Check for existing patient with identical clinicNumber
+    if (patient.clinicNumber) {
+      const q = query(collection(db, path), where('clinicNumber', '==', patient.clinicNumber.trim()));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        throw new Error(`DUPLICATE_CLINIC_NUMBER: A patient with Clinic/ART ID "${patient.clinicNumber.trim()}" is already registered.`);
+      }
+    }
     const newDocRef = doc(collection(db, path));
-    await setDoc(newDocRef, { ...patient, createdAt: Timestamp.now() });
+    await setDoc(newDocRef, { ...patient, clinicNumber: patient.clinicNumber.trim(), createdAt: Timestamp.now() });
     await logActivity('Patient Registered', `New patient ${patient.firstName} ${patient.lastName} (${patient.clinicNumber}) added.`, 'Patient');
     return newDocRef.id;
   } catch (error) {
+    if (error instanceof Error && error.message.includes('DUPLICATE_CLINIC_NUMBER')) {
+      throw error;
+    }
     handleFirestoreError(error, OperationType.CREATE, path);
   }
 }
@@ -430,12 +514,16 @@ export function subscribeToAllVisits(callback: (visits: any[]) => void) {
 export async function addVisit(patientId: string, visit: any) {
   const path = 'visits';
   try {
+    const batch = writeBatch(db);
     const newDocRef = doc(collection(db, path));
-    await setDoc(newDocRef, { ...visit, patientId, createdAt: Timestamp.now() });
+    const patientRef = doc(db, 'patients', patientId);
+    
+    batch.set(newDocRef, { ...visit, patientId, createdAt: Timestamp.now() });
     
     const patientUpdate: any = {
       lastVisitDate: visit.date,
       nextAppointmentDate: visit.nextAppointmentDate || null,
+      updatedAt: Timestamp.now(),
     };
     
     const vlResultSafe = visit.vlResult !== undefined && visit.vlResult !== null && visit.vlResult !== '' 
@@ -449,14 +537,19 @@ export async function addVisit(patientId: string, visit: any) {
     } else if (visit.type === 'Drug Pickup & VL Test') {
       patientUpdate.lastVlDate = null;
       patientUpdate.vlSuppressed = null;
+      patientUpdate.lastVlResult = null;
     }
     
     if (visit.nextCounselingDate) {
       patientUpdate.nextCounselingDate = visit.nextCounselingDate;
     }
-    await updateDoc(doc(db, 'patients', patientId), patientUpdate);
 
-    const patientDoc = await getDoc(doc(db, 'patients', patientId));
+    batch.update(patientRef, patientUpdate);
+    
+    // Atomically commit visit write & patient update
+    await batch.commit();
+
+    const patientDoc = await getDoc(patientRef);
     const patientData = patientDoc.data();
     const patientName = patientData ? `${patientData.firstName} ${patientData.lastName}` : patientId;
 
@@ -603,6 +696,131 @@ export async function updateCounselingTrack(id: string, track: any) {
   }
 }
 
+export async function exportDatabaseBackup() {
+  const collections = ['patients', 'visits', 'appointments', 'counseling_tracks', 'activity_logs', 'users'];
+  const collectionsData: Record<string, any[]> = {};
+  let totalRecordCount = 0;
+  
+  for (const collName of collections) {
+    try {
+      const q = query(collection(db, collName));
+      const snapshot = await getDocs(q);
+      const docsData = snapshot.docs.map(doc => {
+        const cleanData = { id: doc.id, ...doc.data() } as any;
+        
+        for (const key of Object.keys(cleanData)) {
+          const value = cleanData[key];
+          if (value instanceof Timestamp) {
+            cleanData[key] = {
+              seconds: value.seconds,
+              nanoseconds: value.nanoseconds,
+              formatted: value.toDate().toISOString()
+            };
+          } else if (value && typeof value === 'object') {
+            for (const nestedKey of Object.keys(value)) {
+              if (value[nestedKey] instanceof Timestamp) {
+                value[nestedKey] = {
+                  seconds: value[nestedKey].seconds,
+                  nanoseconds: value[nestedKey].nanoseconds,
+                  formatted: value[nestedKey].toDate().toISOString()
+                };
+              }
+            }
+          }
+        }
+        return cleanData;
+      });
+      collectionsData[collName] = docsData;
+      totalRecordCount += docsData.length;
+    } catch (err) {
+      console.error(`Failed to export collection ${collName}:`, err);
+      collectionsData[collName] = [];
+    }
+  }
+
+  const exportPayload = {
+    _metadata: {
+      facility: 'OTZ Adolescent EMR Clinic',
+      exportTimestamp: new Date().toISOString(),
+      schemaVersion: '2.0-Production-EMR',
+      exportedBy: auth.currentUser?.email || 'Admin',
+      totalRecords: totalRecordCount,
+      collectionStats: Object.keys(collectionsData).reduce((acc, key) => {
+        acc[key] = collectionsData[key].length;
+        return acc;
+      }, {} as Record<string, number>)
+    },
+    ...collectionsData
+  };
+  
+  await logAuditTrail(
+    'Database Backup Generated',
+    'DatabaseSnapshot',
+    'system_backup',
+    `Exported snapshot containing ${totalRecordCount} total records across ${collections.length} collections.`
+  );
+  
+  return exportPayload;
+}
+
 export async function seedDummyData() {
   return true;
+}
+
+export async function importDatabaseBackup(backupData: Record<string, any>) {
+  const supportedCollections = ['patients', 'visits', 'appointments', 'counseling_tracks', 'activity_logs'];
+  let importedCount = 0;
+
+  for (const collName of supportedCollections) {
+    const records = backupData[collName];
+    if (!Array.isArray(records) || records.length === 0) continue;
+
+    let batch = writeBatch(db);
+    let batchCount = 0;
+
+    for (const item of records) {
+      let docData: any = {};
+      let docId = item.id;
+
+      // Check if data came from SQLite stringified format
+      if (item.data && typeof item.data === 'string') {
+        try {
+          docData = JSON.parse(item.data);
+        } catch {
+          docData = { ...item };
+        }
+      } else {
+        docData = { ...item };
+      }
+
+      if (!docId) {
+        docId = docData.id || doc(collection(db, collName)).id;
+      }
+      delete docData.id;
+
+      const docRef = doc(db, collName, docId);
+      batch.set(docRef, docData, { merge: true });
+      batchCount++;
+      importedCount++;
+
+      if (batchCount >= 400) {
+        await batch.commit();
+        batch = writeBatch(db);
+        batchCount = 0;
+      }
+    }
+
+    if (batchCount > 0) {
+      await batch.commit();
+    }
+  }
+
+  await logAuditTrail(
+    'Database Backup Restored',
+    'DatabaseRestore',
+    'system_restore',
+    `Imported ${importedCount} records from backup file.`
+  );
+
+  return { success: true, count: importedCount };
 }
