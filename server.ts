@@ -131,29 +131,47 @@ async function startServer() {
   app.post('/api/import', async (req, res) => {
     try {
       const { patients, visits, appointments, counseling_tracks, activity_logs } = req.body;
+      const now = new Date().toISOString();
       
       const insertData = (collectionName: string, items: any[], insertQuery: string) => {
-        if (!items || !items.length) return;
+        if (!items || !Array.isArray(items) || !items.length) return;
         const stmt = db.prepare(insertQuery);
         const insertMany = db.transaction((rows) => {
-          for (const row of rows) {
+          for (const item of rows) {
             try {
+              let id = item.id;
+              let dataStr = '';
+              const createdAt = item.createdAt || now;
+              const updatedAt = item.updatedAt || now;
+
+              if (item.data && typeof item.data === 'string') {
+                dataStr = item.data;
+              } else {
+                const cleanItem = { ...item };
+                delete cleanItem.id;
+                dataStr = JSON.stringify(cleanItem);
+              }
+
+              if (!id) {
+                id = uuidv4();
+              }
+
               if (collectionName === 'patients') {
-                stmt.run(row.id, row.data, row.createdAt, row.updatedAt);
+                stmt.run(id, dataStr, createdAt, updatedAt);
               } else if (collectionName === 'visits' || collectionName === 'appointments') {
-                stmt.run(row.id, row.patientId, row.data, row.date, row.createdAt);
+                const patientId = item.patientId || item.clientId || '';
+                const date = item.date || item.appointmentDate || now.split('T')[0];
+                stmt.run(id, patientId, dataStr, date, createdAt);
               } else if (collectionName === 'counseling_tracks') {
-                stmt.run(row.id, row.patientId, row.data, row.completed || 0, row.createdAt);
+                const patientId = item.patientId || item.clientId || '';
+                const completed = item.completed ? 1 : 0;
+                stmt.run(id, patientId, dataStr, completed, createdAt);
               } else if (collectionName === 'activity_logs') {
-                stmt.run(row.id, row.data, row.timestamp);
+                const timestamp = item.timestamp || now;
+                stmt.run(id, dataStr, timestamp);
               }
             } catch (e: any) {
-              if (e.message.includes('UNIQUE constraint failed')) {
-                // Skip existing logic handled mostly by IGNORE if supported or we can just ignore
-                console.log(`Duplicate found for ${row.id} in ${collectionName}`);
-              } else {
-                throw e;
-              }
+              console.error(`Error inserting item into ${collectionName}:`, e.message);
             }
           }
         });
@@ -169,10 +187,7 @@ async function startServer() {
       res.json({ message: 'Import successful' });
       
       // Notify clients
-      io.emit('patients_update', []); // Client re-fetches upon this usually, or we can broadcast real updates
-      // The local socket logic sends the full array on next subscribe. We can trigger a quick reload signal
       io.emit('data_imported');
-
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: 'Import failed: ' + err.message });

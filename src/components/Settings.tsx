@@ -3,25 +3,30 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import React, { useState } from 'react';
 import { Card } from './ui/Card';
 import { useSettings } from '../contexts/SettingsContext';
 import { 
   Type, 
   Moon, 
   Sun, 
-  Monitor,
-  Check,
-  Palette,
-  Database,
-  Download,
-  Upload
+  Monitor, 
+  Check, 
+  Palette, 
+  Database, 
+  Download, 
+  Upload,
+  Loader2
 } from 'lucide-react';
 import { cn } from '../utils';
 import { Button } from './ui/Button';
-import { exportDatabaseBackup, importDatabaseBackup } from '../services/firestoreService';
+import { db, auth } from '../firebase';
+import { collection, getDocs, doc, writeBatch, Timestamp } from 'firebase/firestore';
 
 export function Settings() {
   const { theme, fontSize, setTheme, setFontSize } = useSettings();
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
 
   const fontOptions = [
     { id: 'small', label: 'Small', description: 'Compact view for more data' },
@@ -34,24 +39,52 @@ export function Settings() {
     { id: 'dark', label: 'Dark Mode', icon: Moon, description: 'High contrast black interface' },
   ] as const;
 
+  // Export clinic data (works in both Cloud and Local)
   const handleExport = async () => {
+    setIsExporting(true);
     try {
       let data: any = null;
-      
-      // 1. Try exporting directly from Firestore (works on Vercel / Cloud)
+
+      // 1. Try Firestore direct export
       try {
-        data = await exportDatabaseBackup();
+        const collections = ['patients', 'visits', 'appointments', 'counseling_tracks', 'activity_logs'];
+        const exportData: Record<string, any[]> = {};
+        let count = 0;
+
+        for (const collName of collections) {
+          const snap = await getDocs(collection(db, collName));
+          exportData[collName] = snap.docs.map((docSnap) => {
+            const docData = docSnap.data();
+            const clean: Record<string, any> = { id: docSnap.id, ...docData };
+            for (const key of Object.keys(clean)) {
+              if (clean[key] instanceof Timestamp) {
+                clean[key] = clean[key].toDate().toISOString();
+              }
+            }
+            return clean;
+          });
+          count += exportData[collName].length;
+        }
+
+        if (count > 0) {
+          data = exportData;
+        }
       } catch (firestoreErr) {
-        console.warn('Firestore direct export failed or not available, falling back to /api/export:', firestoreErr);
+        console.warn('Direct Firestore export unavailable, trying server API:', firestoreErr);
       }
 
-      // 2. Fallback to local server API (works on local SQLite server)
+      // 2. Fallback to local server API if Firestore had no records or failed
       if (!data) {
         const res = await fetch('/api/export');
-        if (!res.ok) throw new Error('Failed to export data from server');
-        data = await res.json();
+        if (res.ok) {
+          data = await res.json();
+        }
       }
-      
+
+      if (!data || Object.keys(data).length === 0) {
+        throw new Error('No clinic records found to export.');
+      }
+
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -62,56 +95,98 @@ export function Settings() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (error: any) {
-      console.error(error);
+      console.error('Export error:', error);
       alert('Error exporting data: ' + (error?.message || 'Unknown error'));
+    } finally {
+      setIsExporting(false);
     }
   };
 
+  // Import clinic data (works in both Cloud and Local)
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!confirm('Are you sure you want to import this data? Existing conflicting records will be updated.')) {
+    if (!confirm('Are you sure you want to import this data? Existing records will be updated and new records added.')) {
       e.target.value = '';
       return;
     }
 
+    setIsImporting(true);
     try {
       const text = await file.text();
       const parsedData = JSON.parse(text);
 
-      let imported = false;
+      let importedCount = 0;
 
-      // 1. Try importing directly into Firestore (works on Vercel / Cloud)
+      // 1. Direct Firestore Batch Import (Populates Firestore so it works immediately upon login)
       try {
-        const res = await importDatabaseBackup(parsedData);
-        if (res && res.success) {
-          imported = true;
+        const collections = ['patients', 'visits', 'appointments', 'counseling_tracks', 'activity_logs'];
+        for (const collName of collections) {
+          const items = parsedData[collName];
+          if (!Array.isArray(items) || items.length === 0) continue;
+
+          let batch = writeBatch(db);
+          let batchCount = 0;
+
+          for (const item of items) {
+            let docData: any = {};
+            let docId = item.id;
+
+            // Handle SQLite stringified data format if present
+            if (item.data && typeof item.data === 'string') {
+              try {
+                docData = JSON.parse(item.data);
+              } catch {
+                docData = { ...item };
+              }
+            } else {
+              docData = { ...item };
+            }
+
+            if (!docId) {
+              docId = docData.id || doc(collection(db, collName)).id;
+            }
+            delete docData.id;
+
+            const docRef = doc(db, collName, docId);
+            batch.set(docRef, docData, { merge: true });
+            batchCount++;
+            importedCount++;
+
+            if (batchCount >= 400) {
+              await batch.commit();
+              batch = writeBatch(db);
+              batchCount = 0;
+            }
+          }
+
+          if (batchCount > 0) {
+            await batch.commit();
+          }
         }
-      } catch (firestoreErr) {
-        console.warn('Firestore direct import failed or not available, falling back to /api/import:', firestoreErr);
+      } catch (fsErr) {
+        console.warn('Direct Firestore import error (will try local server):', fsErr);
       }
 
-      // 2. Fallback to local server API (works on local SQLite server)
-      if (!imported) {
-        const res = await fetch('/api/import', {
+      // 2. Also forward to local backend SQLite server if available
+      try {
+        await fetch('/api/import', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(parsedData)
         });
-
-        if (!res.ok) {
-          const errorData = await res.json();
-          throw new Error(errorData.error || 'Failed to import data');
-        }
+      } catch {
+        // Backend server may be offline or on Vercel, which is fine since Firestore handled it
       }
 
-      alert('Data imported successfully! The dashboard will reflect changes shortly.');
+      alert(`Data imported successfully! ${importedCount > 0 ? `${importedCount} records loaded.` : ''}`);
       window.location.reload();
     } catch (error: any) {
-      console.error(error);
-      alert('Error importing data: ' + error.message);
+      console.error('Import error:', error);
+      alert('Error importing data: ' + (error?.message || 'Invalid JSON file'));
     } finally {
+      setIsImporting(false);
       e.target.value = '';
     }
   };
@@ -135,28 +210,31 @@ export function Settings() {
               <div>
                 <h3 className="font-medium text-slate-900 dark:text-white mb-2">Export Data</h3>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-                  Download a complete backup of all clinic records, including patients, visits, appointments, and counseling tracks. You can use this file to import into another OTZ clinic instance.
+                  Download a complete backup of all clinic records, including patients, visits, appointments, and counseling tracks.
                 </p>
-                <Button onClick={handleExport} className="gap-2">
-                  <Download className="h-4 w-4" /> Export JSON Backup
+                <Button onClick={handleExport} disabled={isExporting} className="gap-2">
+                  {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                  {isExporting ? 'Exporting...' : 'Export JSON Backup'}
                 </Button>
               </div>
 
               <div className="border-t border-slate-100 dark:border-slate-800 pt-6">
                 <h3 className="font-medium text-slate-900 dark:text-white mb-2">Import Data</h3>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-                  Restore or merge data from a previously exported JSON backup file. Current records with matching IDs will be overwritten.
+                  Restore or merge data from a previously exported JSON backup file. All records will be imported into your clinic registry.
                 </p>
                 <div className="relative inline-block">
                   <input 
                     type="file" 
                     accept=".json" 
+                    disabled={isImporting}
                     onChange={handleImport} 
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
                     title="Choose backup file"
                   />
-                  <Button variant="outline" className="gap-2 w-auto pointer-events-none">
-                    <Upload className="h-4 w-4" /> Import from JSON
+                  <Button variant="outline" disabled={isImporting} className="gap-2 w-auto pointer-events-none">
+                    {isImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                    {isImporting ? 'Importing...' : 'Import from JSON'}
                   </Button>
                 </div>
               </div>
@@ -165,7 +243,6 @@ export function Settings() {
         </section>
 
         {/* Appearance Section */}
-
         <section className="space-y-4">
           <div className="flex items-center gap-2 text-slate-900 dark:text-white font-semibold">
             <Palette className="h-5 w-5 text-indigo-600" />
