@@ -222,7 +222,7 @@ export function PendingVLPage({ patients, onBack, onViewPatient, onPatientUpdate
                         type="number"
                         placeholder="e.g. 20 or 450"
                         className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:text-white"
-                        value={currentInput.result}
+                        value={currentInput.result ?? ''}
                         onChange={(e) => handleInputChange(patient.id, 'result', e.target.value)}
                       />
                     </div>
@@ -234,7 +234,7 @@ export function PendingVLPage({ patients, onBack, onViewPatient, onPatientUpdate
                       <input
                         type="date"
                         className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:text-white"
-                        value={currentInput.date}
+                        value={currentInput.date ?? ''}
                         onChange={(e) => handleInputChange(patient.id, 'date', e.target.value)}
                       />
                     </div>

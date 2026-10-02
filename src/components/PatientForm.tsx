@@ -43,9 +43,53 @@ export function PatientForm({ patient, onSubmit, onCancel }: PatientFormProps) {
   useEffect(() => {
     if (patient) {
       setFormData({
-        ...patient,
-        isOtzPlus: patient.isOtzPlus || (patient.otzPlusType != null),
-        isBaselineNil: patient.isBaselineNil || patient.baselineVlStatus === 'Nil',
+        clinicNumber: patient.clinicNumber ?? '',
+        firstName: patient.firstName ?? '',
+        lastName: patient.lastName ?? '',
+        age: patient.age ?? 0,
+        dateOfBirth: patient.dateOfBirth ?? '',
+        gender: patient.gender ?? 'Female',
+        phone: patient.phone ?? '',
+        address: patient.address ?? '',
+        enrollmentDate: patient.enrollmentDate ?? new Date().toISOString().split('T')[0],
+        ltfuStatus: patient.ltfuStatus ?? 'Active',
+        isOtzPlus: Boolean(patient.isOtzPlus || (patient.otzPlusType != null)),
+        otzPlusType: patient.otzPlusType || 'Pregnant',
+        edd: patient.edd ?? '',
+        childDob: patient.childDob ?? '',
+        childAgeMonths: patient.childAgeMonths ?? undefined,
+        childFeedingMethod: patient.childFeedingMethod ?? undefined,
+        isBaselineNil: Boolean(patient.isBaselineNil || patient.baselineVlStatus === 'Nil'),
+        baselineVlStatus: patient.baselineVlStatus ?? undefined,
+        baselineVlResult: patient.baselineVlResult != null ? patient.baselineVlResult : undefined,
+        baselineVlDate: patient.baselineVlDate ?? '',
+        lastVlResult: patient.lastVlResult ?? undefined,
+        viralLoadResult: patient.viralLoadResult ?? undefined,
+        lastVlDate: patient.lastVlDate ?? undefined,
+        vlSuppressed: patient.vlSuppressed ?? undefined,
+      });
+    } else {
+      setFormData({
+        clinicNumber: '',
+        firstName: '',
+        lastName: '',
+        age: 0,
+        dateOfBirth: '',
+        gender: 'Female',
+        phone: '',
+        address: '',
+        enrollmentDate: new Date().toISOString().split('T')[0],
+        ltfuStatus: 'Active',
+        isOtzPlus: false,
+        otzPlusType: undefined,
+        edd: '',
+        childDob: '',
+        childAgeMonths: undefined,
+        childFeedingMethod: undefined,
+        isBaselineNil: false,
+        baselineVlStatus: undefined,
+        baselineVlResult: undefined,
+        baselineVlDate: '',
       });
     }
   }, [patient]);
@@ -411,7 +455,7 @@ export function PatientForm({ patient, onSubmit, onCancel }: PatientFormProps) {
                 label="Baseline VL Result (copies / mL)"
                 type="number"
                 min="0"
-                value={formData.baselineVlResult !== undefined ? formData.baselineVlResult : ''}
+                value={formData.baselineVlResult != null ? formData.baselineVlResult : ''}
                 onChange={(e) => {
                   const val = e.target.value === '' ? undefined : Number(e.target.value);
                   setFormData({
@@ -441,7 +485,7 @@ export function PatientForm({ patient, onSubmit, onCancel }: PatientFormProps) {
             <Input
               label="Baseline VL Test Date"
               type="date"
-              value={formData.baselineVlDate || ''}
+              value={formData.baselineVlDate ?? ''}
               onChange={(e) => setFormData({ ...formData, baselineVlDate: e.target.value })}
             />
           </div>

@@ -1,7 +1,12 @@
 /// <reference types="vite/client" />
 
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
+import { 
+  initializeFirestore, 
+  getFirestore, 
+  persistentLocalCache, 
+  persistentMultipleTabManager 
+} from 'firebase/firestore';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 
 const firebaseConfig = {
@@ -15,18 +20,24 @@ const firebaseConfig = {
 
 const databaseId = import.meta.env.VITE_FIREBASE_DATABASE_ID || "ai-studio-281f10b3-4390-447c-abb6-0c7eac385ddd";
 
-// Initialize Firebase
+// Initialize Firebase App
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-export const db = getFirestore(app, databaseId);
 
-// Enable Firestore IndexedDB persistent offline cache
-enableIndexedDbPersistence(db).catch((err) => {
-  if (err.code === 'failed-precondition') {
-    console.warn('Firestore offline persistence failed: Multiple tabs open');
-  } else if (err.code === 'unimplemented') {
-    console.warn('Firestore offline persistence not supported by browser');
-  }
-});
+// Initialize Firestore with long-polling and multi-tab persistent cache.
+// experimentalForceLongPolling avoids WebChannel streaming/WebSocket timeouts in iframe environments
+let dbInstance;
+try {
+  dbInstance = initializeFirestore(app, {
+    experimentalForceLongPolling: true,
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager()
+    })
+  }, databaseId);
+} catch {
+  dbInstance = getFirestore(app, databaseId);
+}
+
+export const db = dbInstance;
 
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();

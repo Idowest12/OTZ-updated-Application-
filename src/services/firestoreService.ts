@@ -453,7 +453,7 @@ export function subscribeToPatients(callback: (patients: any[]) => void) {
     const patients = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     callback(patients);
   }, (error) => {
-    handleFirestoreError(error, OperationType.GET, path);
+    console.warn('Patients snapshot listener warning:', error);
   });
 }
 
@@ -574,7 +574,7 @@ export function subscribeToVisits(patientId: string, callback: (visits: any[]) =
       .sort((a: any, b: any) => (b.date || '').localeCompare(a.date || ''));
     callback(visits);
   }, (error) => {
-    handleFirestoreError(error, OperationType.GET, path);
+    console.warn(`Visits snapshot listener warning for patient ${patientId}:`, error);
   });
 }
 
@@ -586,7 +586,7 @@ export function subscribeToAllVisits(callback: (visits: any[]) => void) {
       .sort((a: any, b: any) => (b.date || '').localeCompare(a.date || ''));
     callback(visits);
   }, (error) => {
-    handleFirestoreError(error, OperationType.GET, path);
+    console.warn('All visits snapshot listener warning:', error);
   });
 }
 
@@ -781,7 +781,7 @@ export function subscribeToAppointments(callback: (appointments: any[]) => void)
     const appointments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     callback(appointments);
   }, (error) => {
-    handleFirestoreError(error, OperationType.GET, path);
+    console.warn('Appointments snapshot listener warning:', error);
   });
 }
 
@@ -843,7 +843,7 @@ export function subscribeToCounselingTracks(callback: (tracks: any[]) => void) {
     const tracks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     callback(tracks);
   }, (error) => {
-    handleFirestoreError(error, OperationType.GET, path);
+    console.warn('Counseling tracks snapshot listener warning:', error);
   });
 }
 

@@ -142,14 +142,14 @@ export function VisitForm({ patient, initialType, onSubmit, onCancel }: VisitFor
           label="Visit Date"
           type="date"
           required
-          value={formData.date}
+          value={formData.date ?? ''}
           onChange={(e) => setFormData({ ...formData, date: e.target.value })}
         />
         <div className="space-y-1.5">
           <label className="text-sm font-medium text-slate-700">Visit Type</label>
           <select
             className="flex h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-            value={formData.type}
+            value={formData.type ?? 'Drug Pickup & VL Test'}
             onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
           >
             <option value="Drug Pickup & VL Test">Drug Pickup & VL Test</option>
@@ -167,13 +167,13 @@ export function VisitForm({ patient, initialType, onSubmit, onCancel }: VisitFor
           label="Viral Load Result (copies/ml)"
           type="number"
           placeholder="Leave blank if no result"
-          value={formData.vlResult || ''}
+          value={formData.vlResult != null ? formData.vlResult : ''}
           onChange={(e) => setFormData({ ...formData, vlResult: e.target.value ? Number(e.target.value) : undefined })}
         />
         <Input
           label="Next Appointment Date"
           type="date"
-          value={formData.nextAppointmentDate || ''}
+          value={formData.nextAppointmentDate ?? ''}
           onChange={(e) => setFormData({ ...formData, nextAppointmentDate: e.target.value })}
         />
       </div>
@@ -182,7 +182,7 @@ export function VisitForm({ patient, initialType, onSubmit, onCancel }: VisitFor
         <label className="text-sm font-medium text-slate-700">Clinical Notes</label>
         <textarea
           className="flex min-h-[100px] w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-          value={formData.notes}
+          value={formData.notes ?? ''}
           onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
           placeholder="Enter any clinical observations or notes..."
         />
