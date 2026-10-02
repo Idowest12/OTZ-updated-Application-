@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Sidebar, View } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
 import { PatientList } from './components/PatientList';
@@ -16,6 +16,7 @@ import { Modal } from './components/ui/Modal';
 import { PatientForm } from './components/PatientForm';
 import { VisitForm } from './components/VisitForm';
 import { PatientDetails } from './components/PatientDetails';
+import { PendingVLPage } from './components/PendingVLPage';
 import { TransferForm } from './components/TransferForm';
 import { AppointmentForm } from './components/AppointmentForm';
 import { Patient, Visit, CounselingTrack, Appointment } from './types';
@@ -27,11 +28,13 @@ import { Activity, Eye, EyeOff, ShieldCheck, UserCheck, Lock } from 'lucide-reac
 import { cn } from './utils';
 import { 
   subscribeToPatients, 
+  getPatients,
   addPatient, 
   bulkAddPatients,
   updatePatient, 
   deletePatient,
   addVisit, 
+  getAllVisits,
   subscribeToAppointments,
   updateAppointmentStatus,
   addAppointment,
@@ -65,10 +68,10 @@ export default function App() {
   }, []);
 
   const [currentView, setCurrentView] = useState<View>('dashboard');
+  const [previousView, setPreviousView] = useState<View>('patients');
   const [isPatientModalOpen, setIsPatientModalOpen] = useState(false);
   const [isVisitModalOpen, setIsVisitModalOpen] = useState(false);
   const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);
-  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | undefined>();
   const [selectedVisitType, setSelectedVisitType] = useState<string | undefined>();
@@ -77,8 +80,24 @@ export default function App() {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [counselingTracks, setCounselingTracks] = useState<CounselingTrack[]>([]);
 
+  const inFlightVisitSubmissions = useRef<Set<string>>(new Set());
+  const inFlightAppointmentSubmissions = useRef<Set<string>>(new Set());
+
+  const activeSelectedPatient = useMemo(() => {
+    if (!selectedPatient) return undefined;
+    return patients.find((p) => p.id === selectedPatient.id) || selectedPatient;
+  }, [patients, selectedPatient]);
+
   useEffect(() => {
     if (user) {
+      // Immediate direct fetch so state is populated instantly
+      getPatients().then((data) => {
+        if (data && data.length > 0) setPatients(data);
+      }).catch(() => {});
+      getAllVisits().then((data) => {
+        if (data && data.length > 0) setVisits(data);
+      }).catch(() => {});
+
       const unsubscribePatients = subscribeToPatients((data) => {
         setPatients(data as Patient[]);
       });
@@ -337,38 +356,46 @@ export default function App() {
     setIsPatientModalOpen(true);
   };
 
-  const handleViewDetails = (patient: Patient) => {
-    setSelectedPatient(patient);
-    setIsDetailsModalOpen(true);
+  const handleViewDetails = (patient: Patient, fromView: View = currentView) => {
+    // Look up the freshest record from patients state to guarantee latest VL and visit info
+    const latestPatient = patients.find(p => p.id === patient.id) || patient;
+    setSelectedPatient(latestPatient);
+    setPreviousView(fromView);
+    setCurrentView('patient-details');
   };
 
   const handleRecordVisit = (patient: Patient, type?: string) => {
-    setSelectedPatient(patient);
+    const latestPatient = patients.find(p => p.id === patient.id) || patient;
+    setSelectedPatient(latestPatient);
     setSelectedVisitType(type);
     setIsVisitModalOpen(true);
   };
 
   const handleScheduleAppointment = (patient: Patient) => {
-    setSelectedPatient(patient);
+    const latestPatient = patients.find(p => p.id === patient.id) || patient;
+    setSelectedPatient(latestPatient);
     setIsAppointmentModalOpen(true);
   };
 
   const handleTransferOut = (patient: Patient) => {
-    setSelectedPatient(patient);
+    const latestPatient = patients.find(p => p.id === patient.id) || patient;
+    setSelectedPatient(latestPatient);
     setIsTransferModalOpen(true);
   };
 
   const handleTransferSubmit = async (destination: string) => {
-    if (!selectedPatient) return;
+    if (!activeSelectedPatient) return;
     try {
-      await updatePatient(selectedPatient.id!, { ltfuStatus: 'Transferred Out' });
-      await addVisit(selectedPatient.id!, {
+      await updatePatient(activeSelectedPatient.id!, { ltfuStatus: 'Transferred Out' });
+      await addVisit(activeSelectedPatient.id!, {
         date: new Date().toISOString().split('T')[0],
         type: 'Transfer Out',
         notes: `Client transferred out to ${destination}.`
       });
       setIsTransferModalOpen(false);
-      setIsDetailsModalOpen(false);
+      // Re-fetch patients
+      const fresh = await getPatients();
+      if (fresh.length > 0) setPatients(fresh);
     } catch (error) {
       console.error('Error transferring out patient:', error);
     }
@@ -383,7 +410,9 @@ export default function App() {
           type: 'Reactivation',
           notes: 'Client reactivated and returned to care.'
         });
-        setIsDetailsModalOpen(false);
+        // Re-fetch patients
+        const fresh = await getPatients();
+        if (fresh.length > 0) setPatients(fresh);
       } catch (error) {
         console.error('Error reactivating patient:', error);
       }
@@ -393,6 +422,7 @@ export default function App() {
   const handleDeletePatient = async (id: string) => {
     try {
       await deletePatient(id);
+      setPatients(prev => prev.filter(p => p.id !== id));
     } catch (error) {
       console.error('Error deleting patient:', error);
     }
@@ -403,6 +433,8 @@ export default function App() {
     try {
       await bulkAddPatients(patientsData);
       console.log('App: Bulk import completed successfully');
+      const fresh = await getPatients();
+      if (fresh.length > 0) setPatients(fresh);
     } catch (error) {
       console.error('App: Error bulk importing patients:', error);
       throw error;
@@ -417,6 +449,8 @@ export default function App() {
         await addPatient(data);
       }
       setIsPatientModalOpen(false);
+      const fresh = await getPatients();
+      if (fresh.length > 0) setPatients(fresh);
     } catch (error: any) {
       console.error('Error saving patient:', error);
       if (error?.message?.includes('DUPLICATE_CLINIC_NUMBER')) {
@@ -427,41 +461,166 @@ export default function App() {
     }
   };
 
-  const handleVisitSubmit = async (data: Partial<Visit>) => {
+  const handlePatientVLUpdate = async (patientId: string, vlResult: number, vlDate: string) => {
+    // 1. Immediate optimistic update so UI reacts instantly without delay
+    setPatients(prevPatients => prevPatients.map(p => {
+      if (p.id !== patientId) return p;
+      return {
+        ...p,
+        lastVlResult: vlResult,
+        viralLoadResult: vlResult,
+        lastVlDate: vlDate,
+        vlSuppressed: vlResult < 50,
+      };
+    }));
+
+    // 2. Fresh re-fetch from Firestore to synchronize with database
     try {
-      if (selectedPatient?.id) {
-        await addVisit(selectedPatient.id, data);
+      const [freshPatients, freshVisits] = await Promise.all([
+        getPatients(),
+        getAllVisits()
+      ]);
+      if (freshPatients && freshPatients.length > 0) {
+        setPatients(freshPatients);
+        setSelectedPatient(prev => {
+          if (!prev) return undefined;
+          return freshPatients.find(p => p.id === prev.id) || prev;
+        });
       }
+      if (freshVisits && freshVisits.length > 0) {
+        setVisits(freshVisits);
+      }
+    } catch (err) {
+      console.warn('Re-fetch warning after VL update:', err);
+    }
+  };
+
+  const handleVisitSubmit = async (data: Partial<Visit>) => {
+    if (!selectedPatient?.id) return;
+    const patientId = selectedPatient.id;
+
+    // Idempotency lock to prevent double-click submissions
+    if (inFlightVisitSubmissions.current.has(patientId)) {
+      console.warn('Duplicate visit submission prevented for patient:', patientId);
+      return;
+    }
+    inFlightVisitSubmissions.current.add(patientId);
+
+    try {
+      const rawVl = data.vlResult as any;
+      const vlResultSafe = rawVl !== undefined && rawVl !== null && rawVl !== '' 
+        ? Number(rawVl) 
+        : undefined;
+      const hasVlResult = vlResultSafe !== undefined && !isNaN(vlResultSafe);
+
+      // 1. Immediately and optimistically update patients state so pending VL status and dashboard update right away
+      setPatients(prevPatients => prevPatients.map(p => {
+        if (p.id !== patientId) return p;
+        const updated = {
+          ...p,
+          lastVisitDate: data.date || p.lastVisitDate,
+          nextAppointmentDate: data.nextAppointmentDate || p.nextAppointmentDate,
+          updatedAt: new Date()
+        };
+        if (hasVlResult) {
+          updated.lastVlResult = vlResultSafe;
+          updated.viralLoadResult = vlResultSafe;
+          updated.lastVlDate = data.date;
+          updated.vlSuppressed = vlResultSafe < 50;
+        } else if (data.type === 'Drug Pickup & VL Test') {
+          updated.lastVlResult = undefined;
+          updated.viralLoadResult = undefined;
+          updated.lastVlDate = undefined;
+          updated.vlSuppressed = undefined;
+        }
+        return updated;
+      }));
+
+      // 2. Commit to Firestore (with atomic batch & service-level idempotency)
+      await addVisit(patientId, data);
+
+      // 3. Immediately re-fetch fresh patients & visits from Firestore
+      try {
+        const [freshPatients, freshVisits] = await Promise.all([
+          getPatients(),
+          getAllVisits()
+        ]);
+        if (freshPatients && freshPatients.length > 0) {
+          setPatients(freshPatients);
+          setSelectedPatient(prev => {
+            if (!prev) return undefined;
+            return freshPatients.find(p => p.id === prev.id) || prev;
+          });
+        }
+        if (freshVisits && freshVisits.length > 0) {
+          setVisits(freshVisits);
+        }
+      } catch (refetchErr) {
+        console.warn('Could not re-fetch after visit submit:', refetchErr);
+      }
+
       setIsVisitModalOpen(false);
     } catch (error) {
       console.error('Error saving visit:', error);
+      alert('Failed to save visit record. Please try again.');
+    } finally {
+      inFlightVisitSubmissions.current.delete(patientId);
     }
   };
 
   const handleAppointmentSubmit = async (date: string, type: 'Clinic Visit' | 'Counseling') => {
+    if (!selectedPatient?.id) return;
+    const lockKey = `${selectedPatient.id}-${date}-${type}`;
+
+    // Idempotency lock to prevent double-click submissions
+    if (inFlightAppointmentSubmissions.current.has(lockKey)) {
+      console.warn('Duplicate appointment submission prevented for key:', lockKey);
+      return;
+    }
+    inFlightAppointmentSubmissions.current.add(lockKey);
+
     try {
-      if (selectedPatient?.id) {
-        await addAppointment({
-          patientId: selectedPatient.id,
-          patientName: `${selectedPatient.firstName} ${selectedPatient.lastName}`,
-          clinicNumber: selectedPatient.clinicNumber,
-          phone: selectedPatient.phone || '',
-          date,
-          type,
-          status: 'Pending'
-        });
-        await updatePatient(selectedPatient.id, { nextAppointmentDate: date });
-      }
+      await addAppointment({
+        patientId: selectedPatient.id,
+        patientName: `${selectedPatient.firstName} ${selectedPatient.lastName}`,
+        clinicNumber: selectedPatient.clinicNumber,
+        phone: selectedPatient.phone || '',
+        date,
+        type,
+        status: 'Pending'
+      });
+      await updatePatient(selectedPatient.id, { nextAppointmentDate: date });
+      
+      // Update local patients state immediately
+      setPatients(prev => prev.map(p => p.id === selectedPatient.id ? { ...p, nextAppointmentDate: date } : p));
+      
+      // Trigger fresh fetch
+      getPatients().then(fresh => {
+        if (fresh.length > 0) setPatients(fresh);
+      }).catch(() => {});
+
       setIsAppointmentModalOpen(false);
     } catch (error) {
       console.error('Error scheduling appointment:', error);
+      alert('Failed to schedule appointment. Please try again.');
+    } finally {
+      inFlightAppointmentSubmissions.current.delete(lockKey);
     }
   };
 
   const renderView = () => {
     switch (currentView) {
       case 'dashboard':
-        return <Dashboard patients={patients} appointments={appointments} visits={visits} tracks={counselingTracks} />;
+        return (
+          <Dashboard 
+            patients={patients} 
+            appointments={appointments} 
+            visits={visits} 
+            tracks={counselingTracks}
+            onNavigate={setCurrentView}
+            onSelectPatient={(p) => handleViewDetails(p, 'dashboard')}
+          />
+        );
       case 'patients':
         return (
           <PatientList
@@ -469,12 +628,51 @@ export default function App() {
             appointments={appointments}
             onAddPatient={handleAddPatient}
             onEditPatient={handleEditPatient}
-            onViewDetails={handleViewDetails}
+            onViewDetails={(p) => handleViewDetails(p, 'patients')}
             onRecordVisit={handleRecordVisit}
             onDeletePatient={handleDeletePatient}
             onBulkImport={handleBulkImport}
             onTransferOut={handleTransferOut}
             onActivate={handleActivate}
+          />
+        );
+      case 'patient-details':
+        if (!activeSelectedPatient) {
+          return (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <p className="text-slate-500 mb-4">No client record selected.</p>
+              <Button onClick={() => setCurrentView('patients')}>Back to Patients</Button>
+            </div>
+          );
+        }
+        return (
+          <PatientDetails
+            patient={activeSelectedPatient}
+            appointments={appointments.filter(a => a.patientId === activeSelectedPatient.id)}
+            onClose={() => setCurrentView(previousView === 'patient-details' ? 'patients' : previousView)}
+            backLabel={previousView === 'dashboard' ? 'Back to Dashboard' : previousView === 'pending-vl' ? 'Back to Pending VL' : 'Back to Patients'}
+            onEdit={handleEditPatient}
+            onRecordVisit={(p) => handleRecordVisit(p)}
+            onScheduleAppointment={(p) => handleScheduleAppointment(p)}
+            onTransferOut={handleTransferOut}
+            onActivate={handleActivate}
+          />
+        );
+      case 'pending-vl':
+        return (
+          <PendingVLPage
+            patients={patients.filter(p => 
+              p.ltfuStatus === 'Active' && 
+              (
+                (p.lastVlResult === undefined && p.viralLoadResult === undefined) || 
+                (p.lastVlResult === null && p.viralLoadResult === null) || 
+                p.vlSuppressed === undefined || 
+                p.vlSuppressed === null
+              )
+            )}
+            onBack={() => setCurrentView('dashboard')}
+            onViewPatient={(p) => handleViewDetails(p, 'pending-vl')}
+            onPatientUpdated={handlePatientVLUpdate}
           />
         );
       case 'appointments':
@@ -519,7 +717,11 @@ export default function App() {
         <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 px-8 backdrop-blur-xs">
           <div className="flex items-center gap-3">
             <span className="text-sm font-bold tracking-wide uppercase text-slate-500 dark:text-slate-400">
-              {currentView.replace('-', ' ')}
+              {currentView === 'patient-details'
+                ? 'Client Dashboard & Clinical History'
+                : currentView === 'pending-vl'
+                ? 'Pending Viral Load Entries'
+                : currentView.replace('-', ' ')}
             </span>
             {isAdmin && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 dark:bg-indigo-950/50 px-3 py-1 text-xs font-semibold text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60 shadow-2xs">
@@ -591,11 +793,11 @@ export default function App() {
       <Modal
         isOpen={isPatientModalOpen}
         onClose={() => setIsPatientModalOpen(false)}
-        title={selectedPatient ? 'Edit Patient' : 'Register New Patient'}
+        title={activeSelectedPatient ? 'Edit Patient' : 'Register New Patient'}
         size="xl"
       >
         <PatientForm
-          patient={selectedPatient}
+          patient={activeSelectedPatient}
           onSubmit={handlePatientSubmit}
           onCancel={() => setIsPatientModalOpen(false)}
         />
@@ -610,9 +812,9 @@ export default function App() {
         title="Record Clinic Visit"
         size="xl"
       >
-        {selectedPatient && (
+        {activeSelectedPatient && (
           <VisitForm
-            patient={selectedPatient}
+            patient={activeSelectedPatient}
             initialType={selectedVisitType}
             onSubmit={handleVisitSubmit}
             onCancel={() => {
@@ -624,40 +826,14 @@ export default function App() {
       </Modal>
 
       <Modal
-        isOpen={isDetailsModalOpen}
-        onClose={() => setIsDetailsModalOpen(false)}
-        title="Patient Details & Clinical History"
-        size="xl"
-      >
-        {selectedPatient && (
-          <PatientDetails
-            patient={selectedPatient}
-            appointments={appointments.filter(a => a.patientId === selectedPatient.id)}
-            onClose={() => setIsDetailsModalOpen(false)}
-            onEdit={handleEditPatient}
-            onRecordVisit={(p) => {
-              setIsDetailsModalOpen(false);
-              handleRecordVisit(p);
-            }}
-            onScheduleAppointment={(p) => {
-              setIsDetailsModalOpen(false);
-              handleScheduleAppointment(p);
-            }}
-            onTransferOut={handleTransferOut}
-            onActivate={handleActivate}
-          />
-        )}
-      </Modal>
-
-      <Modal
         isOpen={isAppointmentModalOpen}
         onClose={() => setIsAppointmentModalOpen(false)}
         title="Schedule Appointment"
         size="md"
       >
-        {selectedPatient && (
+        {activeSelectedPatient && (
           <AppointmentForm
-            patient={selectedPatient}
+            patient={activeSelectedPatient}
             onSubmit={handleAppointmentSubmit}
             onCancel={() => setIsAppointmentModalOpen(false)}
           />
@@ -670,9 +846,9 @@ export default function App() {
         title="Transfer Out Client"
         size="md"
       >
-        {selectedPatient && (
+        {activeSelectedPatient && (
           <TransferForm
-            patient={selectedPatient}
+            patient={activeSelectedPatient}
             onSubmit={handleTransferSubmit}
             onCancel={() => setIsTransferModalOpen(false)}
           />

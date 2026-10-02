@@ -6,13 +6,13 @@
 import { Input } from '@/src/components/ui/Input';
 import { Button } from '@/src/components/ui/Button';
 import { Patient, Visit } from '@/src/types';
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { AlertTriangle } from 'lucide-react';
 
 interface VisitFormProps {
   patient: Patient;
   initialType?: string;
-  onSubmit: (data: Partial<Visit>) => void;
+  onSubmit: (data: Partial<Visit>) => Promise<void> | void;
   onCancel: () => void;
 }
 
@@ -48,10 +48,21 @@ export function VisitForm({ patient, initialType, onSubmit, onCancel }: VisitFor
     notes: '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit(formData);
+    if (isSubmittingRef.current || isSubmitting) return; // Prevent double click
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
+    try {
+      await onSubmit(formData);
+    } catch (err) {
+      console.error('Error submitting visit form:', err);
+      setIsSubmitting(false);
+      isSubmittingRef.current = false;
+    }
   };
 
   return (
@@ -178,11 +189,18 @@ export function VisitForm({ patient, initialType, onSubmit, onCancel }: VisitFor
       </div>
 
       <div className="flex justify-end gap-3 pt-4">
-        <Button type="button" variant="outline" onClick={onCancel}>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
           Cancel
         </Button>
-        <Button type="submit">
-          Save Visit Record
+        <Button type="submit" disabled={isSubmitting} className="gap-2">
+          {isSubmitting ? (
+            <>
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              Saving Visit...
+            </>
+          ) : (
+            'Save Visit Record'
+          )}
         </Button>
       </div>
     </form>

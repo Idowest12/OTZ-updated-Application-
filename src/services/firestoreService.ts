@@ -170,8 +170,10 @@ export async function updatePatientVL(patientId: string, vlResult: number, vlDat
     
     await updateDoc(patientRef, {
       lastVlResult: vlResult,
+      viralLoadResult: vlResult,
       lastVlDate: vlDate,
-      vlSuppressed: vlSuppressed
+      vlSuppressed: vlSuppressed,
+      updatedAt: Timestamp.now()
     });
     
     await logActivity(
@@ -179,6 +181,39 @@ export async function updatePatientVL(patientId: string, vlResult: number, vlDat
       `Updated VL for patient ID: ${patientId} to ${vlResult} copies/mL`,
       'Patient'
     );
+
+    // Save/update in visits collection so Clinical History reflects this test
+    try {
+      const visitsQuery = query(
+        collection(db, 'visits'),
+        where('patientId', '==', patientId)
+      );
+      const visitsSnapshot = await getDocs(visitsQuery);
+      
+      const existingVisit = visitsSnapshot.docs.find(d => {
+        const v = d.data();
+        return v.date === vlDate || v.vlResult === undefined || v.vlResult === null;
+      });
+
+      if (existingVisit) {
+        await updateDoc(existingVisit.ref, {
+          vlResult: vlResult,
+          updatedAt: Timestamp.now()
+        });
+      } else {
+        const newVisitRef = doc(collection(db, 'visits'));
+        await setDoc(newVisitRef, {
+          patientId,
+          date: vlDate,
+          type: 'Drug Pickup & VL Test',
+          vlResult: vlResult,
+          notes: `Viral Load Result: ${vlResult} c/mL (Entered from Pending VL Entry)`,
+          createdAt: Timestamp.now()
+        });
+      }
+    } catch (visitErr) {
+      console.warn('Could not update visits collection:', visitErr);
+    }
 
     // If viral load is unsuppressed, enroll in counseling track if not already in one
     if (vlResult >= 50 && patientData) {
@@ -422,6 +457,29 @@ export function subscribeToPatients(callback: (patients: any[]) => void) {
   });
 }
 
+export async function getPatients(): Promise<Patient[]> {
+  const path = 'patients';
+  try {
+    const snap = await getDocs(collection(db, path));
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Patient));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+    return [];
+  }
+}
+
+export async function getPatient(patientId: string): Promise<Patient | null> {
+  const path = `patients/${patientId}`;
+  try {
+    const snap = await getDoc(doc(db, 'patients', patientId));
+    if (!snap.exists()) return null;
+    return { id: snap.id, ...snap.data() } as Patient;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+    return null;
+  }
+}
+
 export async function addPatient(patient: any) {
   const path = 'patients';
   try {
@@ -492,9 +550,11 @@ export async function deletePatient(id: string) {
 // Visits
 export function subscribeToVisits(patientId: string, callback: (visits: any[]) => void) {
   const path = 'visits';
-  const q = query(collection(db, path), where('patientId', '==', patientId), orderBy('date', 'desc'));
+  const q = query(collection(db, path), where('patientId', '==', patientId));
   return onSnapshot(q, (snapshot) => {
-    const visits = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const visits = snapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .sort((a: any, b: any) => (b.date || '').localeCompare(a.date || ''));
     callback(visits);
   }, (error) => {
     handleFirestoreError(error, OperationType.GET, path);
@@ -504,21 +564,82 @@ export function subscribeToVisits(patientId: string, callback: (visits: any[]) =
 export function subscribeToAllVisits(callback: (visits: any[]) => void) {
   const path = 'visits';
   return onSnapshot(collection(db, path), (snapshot) => {
-    const visits = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const visits = snapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .sort((a: any, b: any) => (b.date || '').localeCompare(a.date || ''));
     callback(visits);
   }, (error) => {
     handleFirestoreError(error, OperationType.GET, path);
   });
 }
 
-export async function addVisit(patientId: string, visit: any) {
+export async function getAllVisits(): Promise<Visit[]> {
   const path = 'visits';
   try {
+    const snap = await getDocs(collection(db, path));
+    return snap.docs
+      .map(doc => ({ id: doc.id, ...doc.data() } as Visit))
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+    return [];
+  }
+}
+
+export async function getPatientVisits(patientId: string): Promise<Visit[]> {
+  const path = 'visits';
+  try {
+    const q = query(collection(db, path), where('patientId', '==', patientId));
+    const snap = await getDocs(q);
+    return snap.docs
+      .map(doc => ({ id: doc.id, ...doc.data() } as Visit))
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+    return [];
+  }
+}
+
+export async function addVisit(patientId: string, visit: any, idempotencyKey?: string) {
+  const path = 'visits';
+  try {
+    // Idempotency guard: prevent duplicate visit creations from rapid double-clicks
+    try {
+      const q = query(collection(db, path), where('patientId', '==', patientId));
+      const existingSnap = await getDocs(q);
+      const now = Date.now();
+      const duplicate = existingSnap.docs.find(d => {
+        const data = d.data();
+        const sameDate = data.date === visit.date;
+        const sameType = data.type === visit.type;
+        const createdAtMs = data.createdAt?.toMillis ? data.createdAt.toMillis() : null;
+        const isRecent = createdAtMs ? (now - createdAtMs < 15000) : false;
+        const sameKey = Boolean(idempotencyKey && data.idempotencyKey === idempotencyKey);
+        return (sameDate && sameType && isRecent) || sameKey;
+      });
+
+      if (duplicate) {
+        console.warn(`Idempotency: Reusing existing visit ${duplicate.id} instead of creating duplicate.`);
+        await updateDoc(duplicate.ref, {
+          ...visit,
+          updatedAt: Timestamp.now()
+        });
+        return duplicate.id;
+      }
+    } catch (checkErr) {
+      console.warn('Idempotency check warning in addVisit:', checkErr);
+    }
+
     const batch = writeBatch(db);
     const newDocRef = doc(collection(db, path));
     const patientRef = doc(db, 'patients', patientId);
     
-    batch.set(newDocRef, { ...visit, patientId, createdAt: Timestamp.now() });
+    batch.set(newDocRef, { 
+      ...visit, 
+      patientId, 
+      idempotencyKey: idempotencyKey || null,
+      createdAt: Timestamp.now() 
+    });
     
     const patientUpdate: any = {
       lastVisitDate: visit.date,
@@ -534,10 +655,12 @@ export async function addVisit(patientId: string, visit: any) {
       patientUpdate.vlSuppressed = vlResultSafe < 50;
       patientUpdate.lastVlDate = visit.date;
       patientUpdate.lastVlResult = vlResultSafe;
+      patientUpdate.viralLoadResult = vlResultSafe;
     } else if (visit.type === 'Drug Pickup & VL Test') {
       patientUpdate.lastVlDate = null;
       patientUpdate.vlSuppressed = null;
       patientUpdate.lastVlResult = null;
+      patientUpdate.viralLoadResult = null;
     }
     
     if (visit.nextCounselingDate) {
@@ -645,11 +768,42 @@ export function subscribeToAppointments(callback: (appointments: any[]) => void)
   });
 }
 
-export async function addAppointment(appointment: any) {
+export async function addAppointment(appointment: any, idempotencyKey?: string) {
   const path = 'appointments';
   try {
+    // Idempotency guard: prevent duplicate pending appointments for the same client and date
+    try {
+      const q = query(
+        collection(db, path),
+        where('patientId', '==', appointment.patientId)
+      );
+      const existingSnap = await getDocs(q);
+      const now = Date.now();
+      const existing = existingSnap.docs.find(d => {
+        const data = d.data();
+        const sameDate = data.date === appointment.date;
+        const sameType = data.type === appointment.type;
+        const isPending = data.status === 'Pending';
+        const createdAtMs = data.createdAt?.toMillis ? data.createdAt.toMillis() : null;
+        const isRecent = createdAtMs ? (now - createdAtMs < 15000) : false;
+        const sameKey = Boolean(idempotencyKey && data.idempotencyKey === idempotencyKey);
+        return (sameDate && sameType && (isPending || isRecent)) || sameKey;
+      });
+
+      if (existing) {
+        console.warn(`Idempotency: Reusing existing appointment ${existing.id} instead of creating duplicate.`);
+        return existing.id;
+      }
+    } catch (checkErr) {
+      console.warn('Idempotency check warning in addAppointment:', checkErr);
+    }
+
     const newDocRef = doc(collection(db, path));
-    await setDoc(newDocRef, { ...appointment, createdAt: Timestamp.now() });
+    await setDoc(newDocRef, { 
+      ...appointment, 
+      idempotencyKey: idempotencyKey || null,
+      createdAt: Timestamp.now() 
+    });
     return newDocRef.id;
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);

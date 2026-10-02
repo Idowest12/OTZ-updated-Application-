@@ -23,7 +23,9 @@ export interface Patient {
   vlSuppressed?: boolean;
   lastVlDate?: string;
   lastVlResult?: number;
+  viralLoadResult?: number;
   createdAt?: any; // Firestore Timestamp
+  updatedAt?: any;
 }
 
 export interface Visit {

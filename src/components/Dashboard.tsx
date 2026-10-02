@@ -5,7 +5,6 @@
 
 import { useState } from 'react';
 import { Card } from '@/src/components/ui/Card';
-import { PendingVLModal } from '@/src/components/PendingVLModal';
 import { PatientListModal } from '@/src/components/PatientListModal';
 import {
   Users,
@@ -36,8 +35,16 @@ import { Patient, Visit, CounselingTrack } from '@/src/types';
 
 const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
-export function Dashboard({ patients, appointments, visits, tracks = [] }: { patients: Patient[], appointments: any[], visits: Visit[], tracks?: CounselingTrack[] }) {
-  const [isPendingVLModalOpen, setIsPendingVLModalOpen] = useState(false);
+interface DashboardProps {
+  patients: Patient[];
+  appointments: any[];
+  visits: Visit[];
+  tracks?: CounselingTrack[];
+  onNavigate?: (view: any) => void;
+  onSelectPatient?: (patient: Patient) => void;
+}
+
+export function Dashboard({ patients, appointments, visits, tracks = [], onNavigate, onSelectPatient }: DashboardProps) {
   const [listModalOpen, setListModalOpen] = useState(false);
   const [listModalTitle, setListModalTitle] = useState('');
   const [listModalPatients, setListModalPatients] = useState<Patient[]>([]);
@@ -151,7 +158,7 @@ export function Dashboard({ patients, appointments, visits, tracks = [] }: { pat
       color: 'text-indigo-600 dark:text-indigo-400',
       bg: 'bg-indigo-50 dark:bg-indigo-900/20',
       trend: 'Needs VL update',
-      onClick: () => setIsPendingVLModalOpen(true),
+      onClick: () => onNavigate ? onNavigate('pending-vl') : undefined,
       clickable: true
     },
     {
@@ -411,17 +418,12 @@ export function Dashboard({ patients, appointments, visits, tracks = [] }: { pat
         </Card>
       </div>
 
-      <PendingVLModal 
-        isOpen={isPendingVLModalOpen}
-        onClose={() => setIsPendingVLModalOpen(false)}
-        patients={pendingVlPatients}
-      />
-
       <PatientListModal
         isOpen={listModalOpen}
         onClose={() => setListModalOpen(false)}
         title={listModalTitle}
         patients={listModalPatients}
+        onSelectPatient={onSelectPatient}
       />
     </div>
   );

@@ -20,7 +20,7 @@ import {
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 
-export type View = 'dashboard' | 'patients' | 'appointments' | 'viral-load' | 'reports' | 'settings' | 'admin';
+export type View = 'dashboard' | 'patients' | 'appointments' | 'viral-load' | 'reports' | 'settings' | 'admin' | 'patient-details' | 'pending-vl';
 
 interface SidebarProps {
   currentView: View;
@@ -79,7 +79,9 @@ export function Sidebar({ currentView, onViewChange, onLogout, appointments = []
       <nav className="flex-1 space-y-1 px-3 py-4">
         {menuItems.map((item) => {
           const Icon = item.icon;
-          const isActive = currentView === item.id;
+          const isActive = currentView === item.id ||
+            (item.id === 'patients' && currentView === 'patient-details') ||
+            (item.id === 'viral-load' && currentView === 'pending-vl');
 
           return (
             <button

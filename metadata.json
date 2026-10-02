@@ -1,5 +1,8 @@
 {
   "name": "OTZ CLUB",
   "description": "A professional, simple, and friendly clinic management system for OTZ (Operation Triple Zero) tracking, patient management, and viral load statistics.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

@@ -1,11 +1,11 @@
 import { Input } from '@/src/components/ui/Input';
 import { Button } from '@/src/components/ui/Button';
 import { Patient } from '@/src/types';
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 
 interface AppointmentFormProps {
   patient: Patient;
-  onSubmit: (date: string, type: 'Clinic Visit' | 'Counseling') => void;
+  onSubmit: (date: string, type: 'Clinic Visit' | 'Counseling') => Promise<void> | void;
   onCancel: () => void;
 }
 
@@ -13,15 +13,26 @@ export function AppointmentForm({ patient, onSubmit, onCancel }: AppointmentForm
   const [date, setDate] = useState('');
   const [type, setType] = useState<'Clinic Visit' | 'Counseling'>('Clinic Visit');
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!date) {
       setError('Appointment date is required');
       return;
     }
+    if (isSubmittingRef.current || isSubmitting) return; // Prevent double click
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
     setError('');
-    onSubmit(date, type);
+    try {
+      await onSubmit(date, type);
+    } catch (err) {
+      console.error('Error submitting appointment:', err);
+      setIsSubmitting(false);
+      isSubmittingRef.current = false;
+    }
   };
 
   return (
@@ -62,11 +73,18 @@ export function AppointmentForm({ patient, onSubmit, onCancel }: AppointmentForm
       </div>
 
       <div className="flex justify-end gap-3 pt-4">
-        <Button type="button" variant="outline" onClick={onCancel}>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
           Cancel
         </Button>
-        <Button type="submit">
-          Schedule Appointment
+        <Button type="submit" disabled={isSubmitting} className="gap-2">
+          {isSubmitting ? (
+            <>
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              Scheduling...
+            </>
+          ) : (
+            'Schedule Appointment'
+          )}
         </Button>
       </div>
     </form>

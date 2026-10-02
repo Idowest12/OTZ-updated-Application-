@@ -20,8 +20,6 @@ import {
 } from 'lucide-react';
 import { cn } from '../utils';
 import { Button } from './ui/Button';
-import { db, auth } from '../firebase';
-import { collection, getDocs, doc, writeBatch, Timestamp } from 'firebase/firestore';
 
 export function Settings() {
   const { theme, fontSize, setTheme, setFontSize } = useSettings();
@@ -39,52 +37,26 @@ export function Settings() {
     { id: 'dark', label: 'Dark Mode', icon: Moon, description: 'High contrast black interface' },
   ] as const;
 
-  // Export clinic data (works in both Cloud and Local)
+  // Handler to export full JSON backup
   const handleExport = async () => {
     setIsExporting(true);
     try {
-      let data: any = null;
-
-      // 1. Try Firestore direct export
-      try {
-        const collections = ['patients', 'visits', 'appointments', 'counseling_tracks', 'activity_logs'];
-        const exportData: Record<string, any[]> = {};
-        let count = 0;
-
-        for (const collName of collections) {
-          const snap = await getDocs(collection(db, collName));
-          exportData[collName] = snap.docs.map((docSnap) => {
-            const docData = docSnap.data();
-            const clean: Record<string, any> = { id: docSnap.id, ...docData };
-            for (const key of Object.keys(clean)) {
-              if (clean[key] instanceof Timestamp) {
-                clean[key] = clean[key].toDate().toISOString();
-              }
-            }
-            return clean;
-          });
-          count += exportData[collName].length;
+      const res = await fetch('/api/export');
+      if (!res.ok) {
+        const raw = await res.text();
+        let errMsg = 'Failed to export data from server';
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed.error) errMsg = parsed.error;
+        } catch {
+          if (raw.includes('<!DOCTYPE') || raw.includes('<html')) {
+            errMsg = 'Server returned an HTML error. Ensure your local backend is running (npm run dev).';
+          }
         }
-
-        if (count > 0) {
-          data = exportData;
-        }
-      } catch (firestoreErr) {
-        console.warn('Direct Firestore export unavailable, trying server API:', firestoreErr);
+        throw new Error(errMsg);
       }
-
-      // 2. Fallback to local server API if Firestore had no records or failed
-      if (!data) {
-        const res = await fetch('/api/export');
-        if (res.ok) {
-          data = await res.json();
-        }
-      }
-
-      if (!data || Object.keys(data).length === 0) {
-        throw new Error('No clinic records found to export.');
-      }
-
+      
+      const data = await res.json();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -95,19 +67,19 @@ export function Settings() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (error: any) {
-      console.error('Export error:', error);
+      console.error(error);
       alert('Error exporting data: ' + (error?.message || 'Unknown error'));
     } finally {
       setIsExporting(false);
     }
   };
 
-  // Import clinic data (works in both Cloud and Local)
+  // Handler to import full JSON backup
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!confirm('Are you sure you want to import this data? Existing records will be updated and new records added.')) {
+    if (!confirm('Are you sure you want to import this data? Existing conflicting records will be updated.')) {
       e.target.value = '';
       return;
     }
@@ -115,76 +87,47 @@ export function Settings() {
     setIsImporting(true);
     try {
       const text = await file.text();
-      const parsedData = JSON.parse(text);
-
-      let importedCount = 0;
-
-      // 1. Direct Firestore Batch Import (Populates Firestore so it works immediately upon login)
+      let parsedData: any;
       try {
-        const collections = ['patients', 'visits', 'appointments', 'counseling_tracks', 'activity_logs'];
-        for (const collName of collections) {
-          const items = parsedData[collName];
-          if (!Array.isArray(items) || items.length === 0) continue;
+        parsedData = JSON.parse(text);
+      } catch {
+        throw new Error('The selected file is not a valid JSON backup file.');
+      }
 
-          let batch = writeBatch(db);
-          let batchCount = 0;
+      const res = await fetch('/api/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(parsedData)
+      });
 
-          for (const item of items) {
-            let docData: any = {};
-            let docId = item.id;
+      // Safely read response text first to avoid "Unexpected token <" errors
+      const responseText = await res.text();
+      let responseJson: any = null;
+      try {
+        responseJson = JSON.parse(responseText);
+      } catch {
+        // Response was HTML (e.g. 404, 413, or 500 error page)
+      }
 
-            // Handle SQLite stringified data format if present
-            if (item.data && typeof item.data === 'string') {
-              try {
-                docData = JSON.parse(item.data);
-              } catch {
-                docData = { ...item };
-              }
-            } else {
-              docData = { ...item };
-            }
-
-            if (!docId) {
-              docId = docData.id || doc(collection(db, collName)).id;
-            }
-            delete docData.id;
-
-            const docRef = doc(db, collName, docId);
-            batch.set(docRef, docData, { merge: true });
-            batchCount++;
-            importedCount++;
-
-            if (batchCount >= 400) {
-              await batch.commit();
-              batch = writeBatch(db);
-              batchCount = 0;
-            }
-          }
-
-          if (batchCount > 0) {
-            await batch.commit();
+      if (!res.ok) {
+        let errorMsg = responseJson?.error;
+        if (!errorMsg) {
+          if (responseText.includes('PayloadTooLargeError') || res.status === 413) {
+            errorMsg = 'Backup file is too large for the current server limit. Ensure server.ts has express.json({ limit: "50mb" }).';
+          } else if (responseText.includes('<!DOCTYPE') || responseText.includes('<html')) {
+            errorMsg = `Server returned an HTML error (status ${res.status}). Make sure server.ts has the updated /api/import route and restart your local dev server.`;
+          } else {
+            errorMsg = responseText || 'Failed to import data';
           }
         }
-      } catch (fsErr) {
-        console.warn('Direct Firestore import error (will try local server):', fsErr);
+        throw new Error(errorMsg);
       }
 
-      // 2. Also forward to local backend SQLite server if available
-      try {
-        await fetch('/api/import', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(parsedData)
-        });
-      } catch {
-        // Backend server may be offline or on Vercel, which is fine since Firestore handled it
-      }
-
-      alert(`Data imported successfully! ${importedCount > 0 ? `${importedCount} records loaded.` : ''}`);
+      alert('Data imported successfully! The dashboard will reflect changes shortly.');
       window.location.reload();
     } catch (error: any) {
       console.error('Import error:', error);
-      alert('Error importing data: ' + (error?.message || 'Invalid JSON file'));
+      alert('Error importing data: ' + error.message);
     } finally {
       setIsImporting(false);
       e.target.value = '';

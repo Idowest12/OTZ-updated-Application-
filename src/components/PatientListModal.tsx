@@ -1,15 +1,16 @@
 import { Modal } from './ui/Modal';
 import { Patient } from '../types';
-import { Users } from 'lucide-react';
+import { Users, ExternalLink } from 'lucide-react';
 
 interface PatientListModalProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
   patients: Patient[];
+  onSelectPatient?: (patient: Patient) => void;
 }
 
-export function PatientListModal({ isOpen, onClose, title, patients }: PatientListModalProps) {
+export function PatientListModal({ isOpen, onClose, title, patients, onSelectPatient }: PatientListModalProps) {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title} size="lg">
       <div className="space-y-4">
@@ -25,11 +26,29 @@ export function PatientListModal({ isOpen, onClose, title, patients }: PatientLi
             <p className="text-center text-sm text-slate-500 py-8">No patients found in this category.</p>
           ) : (
             patients.map(patient => (
-              <div key={patient.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700 transition-colors">
+              <div 
+                key={patient.id} 
+                onClick={() => {
+                  if (onSelectPatient) {
+                    onClose();
+                    onSelectPatient(patient);
+                  }
+                }}
+                className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700 transition-colors ${
+                  onSelectPatient ? 'cursor-pointer hover:shadow-xs' : ''
+                }`}
+              >
                 <div>
-                  <h4 className="font-semibold text-slate-900 dark:text-white">
-                    {patient.firstName} {patient.lastName}
-                  </h4>
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-semibold text-slate-900 dark:text-white">
+                      {patient.firstName} {patient.lastName}
+                    </h4>
+                    {onSelectPatient && (
+                      <span className="text-xs text-indigo-600 dark:text-indigo-400 font-medium inline-flex items-center gap-0.5">
+                        <ExternalLink className="h-3 w-3" /> View Dashboard
+                      </span>
+                    )}
+                  </div>
                   <div className="text-xs text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-2 mt-1">
                     <span className="font-medium text-indigo-600 dark:text-indigo-400">{patient.clinicNumber}</span>
                     <span>•</span>
