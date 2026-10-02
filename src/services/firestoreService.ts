@@ -480,6 +480,16 @@ export async function getPatient(patientId: string): Promise<Patient | null> {
   }
 }
 
+function sanitizeData(obj: Record<string, any>): Record<string, any> {
+  const clean: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) {
+      clean[key] = value;
+    }
+  }
+  return clean;
+}
+
 export async function addPatient(patient: any) {
   const path = 'patients';
   try {
@@ -492,7 +502,12 @@ export async function addPatient(patient: any) {
       }
     }
     const newDocRef = doc(collection(db, path));
-    await setDoc(newDocRef, { ...patient, clinicNumber: patient.clinicNumber.trim(), createdAt: Timestamp.now() });
+    const safeData = sanitizeData({ 
+      ...patient, 
+      clinicNumber: patient.clinicNumber.trim(), 
+      createdAt: Timestamp.now() 
+    });
+    await setDoc(newDocRef, safeData);
     await logActivity('Patient Registered', `New patient ${patient.firstName} ${patient.lastName} (${patient.clinicNumber}) added.`, 'Patient');
     return newDocRef.id;
   } catch (error) {
@@ -513,7 +528,8 @@ export async function bulkAddPatients(patients: any[]) {
       
       chunk.forEach((patient) => {
         const newDocRef = doc(collection(db, path));
-        batch.set(newDocRef, { ...patient, createdAt: Timestamp.now() });
+        const safeData = sanitizeData({ ...patient, createdAt: Timestamp.now() });
+        batch.set(newDocRef, safeData);
       });
       
       await batch.commit();
@@ -526,7 +542,8 @@ export async function bulkAddPatients(patients: any[]) {
 export async function updatePatient(id: string, patient: any) {
   const path = `patients/${id}`;
   try {
-    await updateDoc(doc(db, 'patients', id), { ...patient, updatedAt: Timestamp.now() });
+    const safeData = sanitizeData({ ...patient, updatedAt: Timestamp.now() });
+    await updateDoc(doc(db, 'patients', id), safeData);
     await logActivity('Patient Updated', `Patient record (ID: ${id}) modified.`, 'Patient');
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);

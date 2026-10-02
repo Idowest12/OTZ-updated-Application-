@@ -445,6 +445,7 @@ export default function App() {
     try {
       if (selectedPatient?.id) {
         await updatePatient(selectedPatient.id, data);
+        setSelectedPatient(prev => prev ? ({ ...prev, ...data } as Patient) : undefined);
       } else {
         await addPatient(data);
       }

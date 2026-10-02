@@ -23,7 +23,9 @@ import {
   GraduationCap,
   FileText,
   ArrowLeft,
-  ChevronRight
+  ChevronRight,
+  Heart,
+  Baby
 } from 'lucide-react';
 
 interface PatientDetailsProps {
@@ -131,9 +133,17 @@ export function PatientDetails({ patient, appointments = [], onClose, onEdit, on
                 <User className="h-8 w-8" />
               </div>
               <div>
-                <h2 className="text-2xl font-bold text-slate-900">
-                  {patient.firstName} {patient.lastName}
-                </h2>
+                <div className="flex items-center gap-3">
+                  <h2 className="text-2xl font-bold text-slate-900">
+                    {patient.firstName} {patient.lastName}
+                  </h2>
+                  {patient.isOtzPlus && (
+                    <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold bg-fuchsia-100 text-fuchsia-800 border border-fuchsia-200 shadow-xs">
+                      <Heart className="h-3 w-3 fill-fuchsia-600 text-fuchsia-600" />
+                      OTZ Plus ({patient.otzPlusType || 'Enrolled'})
+                    </span>
+                  )}
+                </div>
                 <div className="flex flex-wrap items-center gap-2 mt-1.5">
                   <p className="text-sm font-medium text-slate-500">
                     MH NO: {patient.clinicNumber}
@@ -172,6 +182,47 @@ export function PatientDetails({ patient, appointments = [], onClose, onEdit, on
               </Button>
             </div>
           </div>
+
+          {/* OTZ Plus Alert / Information Banner */}
+          {patient.isOtzPlus && (
+            <div className="mt-6 rounded-2xl border border-fuchsia-200 bg-gradient-to-r from-fuchsia-50/80 via-pink-50/50 to-purple-50/60 p-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-fuchsia-100 text-fuchsia-600">
+                    <Baby className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-fuchsia-950 flex items-center gap-2">
+                      OTZ Plus Profile & Tracking
+                      <span className="text-xs font-semibold text-fuchsia-700 bg-fuchsia-100/80 px-2 py-0.5 rounded-md">
+                        {patient.otzPlusType || 'Enrolled'}
+                      </span>
+                    </h4>
+                    <div className="mt-1 flex flex-wrap gap-4 text-xs text-slate-700">
+                      {patient.edd && (
+                        <div>
+                          <span className="font-semibold text-fuchsia-900">EDD: </span>
+                          <span className="font-medium">{formatDate(patient.edd)}</span>
+                        </div>
+                      )}
+                      {patient.childDob && (
+                        <div>
+                          <span className="font-semibold text-fuchsia-900">Child DOB: </span>
+                          <span className="font-medium">{formatDate(patient.childDob)}</span>
+                        </div>
+                      )}
+                      {patient.childFeedingMethod && (
+                        <div>
+                          <span className="font-semibold text-fuchsia-900">Infant Feeding: </span>
+                          <span className="font-medium">{patient.childFeedingMethod}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2">
             <div className="flex items-center gap-3 text-slate-600">
@@ -226,22 +277,50 @@ export function PatientDetails({ patient, appointments = [], onClose, onEdit, on
                   {patient.ltfuStatus}
                 </span>
               </div>
+
+              {/* OTZ Category */}
               <div className="flex items-center justify-between">
-                <span className="text-sm text-slate-600">VL Status</span>
-                {patient.vlSuppressed !== undefined ? (
-                  <span className={cn(
-                    "inline-flex items-center gap-1 text-xs font-bold",
-                    patient.vlSuppressed ? "text-emerald-600" : "text-rose-600"
-                  )}>
-                    {patient.vlSuppressed ? <CheckCircle2 className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
-                    {patient.vlSuppressed ? 'Suppressed (<50)' : 'Unsuppressed (≥50)'}
+                <span className="text-sm text-slate-600">OTZ Category</span>
+                {patient.isOtzPlus ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-fuchsia-100 text-fuchsia-800 px-2 py-0.5 text-xs font-bold">
+                    <Heart className="h-2.5 w-2.5 fill-current" />
+                    OTZ Plus
                   </span>
                 ) : (
-                  <span className="text-xs text-slate-400">No Record</span>
+                  <span className="text-xs font-semibold text-slate-700">Standard OTZ</span>
                 )}
               </div>
+
+              {/* Baseline VL (Before Joining) */}
+              <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+                <div className="flex flex-col">
+                  <span className="text-sm text-slate-600">Baseline VL</span>
+                  <span className="text-[10px] text-slate-400">(Before Joining OTZ)</span>
+                </div>
+                {patient.isBaselineNil || patient.baselineVlStatus === 'Nil' ? (
+                  <span className="rounded-md bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-700 border border-amber-200">
+                    Nil (No Result)
+                  </span>
+                ) : patient.baselineVlResult !== undefined ? (
+                  <div className="text-right">
+                    <span className={cn(
+                      "text-xs font-bold",
+                      patient.baselineVlResult < 50 ? "text-emerald-600" : "text-rose-600"
+                    )}>
+                      {patient.baselineVlResult} c/mL
+                    </span>
+                    {patient.baselineVlDate && (
+                      <p className="text-[10px] text-slate-400">{formatDate(patient.baselineVlDate)}</p>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-xs text-slate-400">Not recorded</span>
+                )}
+              </div>
+
+              {/* Latest Routine VL */}
               <div className="flex items-center justify-between">
-                <span className="text-sm text-slate-600">Latest Viral Load</span>
+                <span className="text-sm text-slate-600">Latest Routine VL</span>
                 {(patient.viralLoadResult !== undefined || patient.lastVlResult !== undefined) ? (
                   <span className={cn(
                     "text-xs font-bold",
@@ -253,6 +332,22 @@ export function PatientDetails({ patient, appointments = [], onClose, onEdit, on
                   <span className="text-xs text-slate-400">Pending / No Record</span>
                 )}
               </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-slate-600">VL Status</span>
+                {patient.vlSuppressed !== undefined ? (
+                  <span className={cn(
+                    "inline-flex items-center gap-1 text-xs font-bold",
+                    patient.vlSuppressed ? "text-emerald-600" : "text-rose-600"
+                  )}>
+                    {patient.vlSuppressed ? <CheckCircle2 className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
+                    {patient.vlSuppressed ? 'Suppressed (<50)' : 'Unsuppressed (≥50)'}
+                  </span>
+                ) : (
+                  <span className="text-xs text-slate-400">Pending Test</span>
+                )}
+              </div>
+
               {patient.lastVlDate && (
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-slate-600">VL Test Date</span>

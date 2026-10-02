@@ -5,6 +5,8 @@
 
 export type LtfuStatus = 'Active' | 'LTFU' | 'Dead' | 'Transferred Out' | 'Graduated';
 
+export type OtzPlusType = 'Pregnant' | 'Mother with Child' | 'Pregnant & Mother with Child';
+
 export interface Patient {
   id: string;
   clinicNumber: string;
@@ -24,6 +26,21 @@ export interface Patient {
   lastVlDate?: string;
   lastVlResult?: number;
   viralLoadResult?: number;
+
+  // OTZ Plus identification (pregnant or with child)
+  isOtzPlus?: boolean;
+  otzPlusType?: OtzPlusType;
+  edd?: string; // Expected delivery date for pregnant clients
+  childDob?: string; // Child's Date of Birth
+  childAgeMonths?: number;
+  childFeedingMethod?: 'Exclusive Breastfeeding' | 'Mixed Feeding' | 'Replacement Feeding' | 'Weaned';
+
+  // Baseline / Pre-joining Viral Load Result (Result before joining OTZ)
+  baselineVlStatus?: 'Recorded' | 'Nil';
+  baselineVlResult?: number; // Numeric copies/mL or undefined if Nil
+  baselineVlDate?: string;
+  isBaselineNil?: boolean;
+
   createdAt?: any; // Firestore Timestamp
   updatedAt?: any;
 }
@@ -90,6 +107,7 @@ export interface ActivityLog {
 export interface DashboardStats {
   totalPatients: number;
   activePatients: number;
+  otzPlusPatients: number;
   ltfuPatients: number;
   graduatedPatients: number;
   transferredOutPatients: number;

@@ -14,7 +14,8 @@ import {
   Users,
   Activity,
   AlertCircle,
-  FlaskConical
+  FlaskConical,
+  Heart
 } from 'lucide-react';
 import { Patient, Visit, CounselingTrack } from '@/src/types';
 import { format, parseISO, subDays, isBefore, subMonths } from 'date-fns';
@@ -179,12 +180,38 @@ export function Reports({ patients, visits, tracks = [] }: { patients: Patient[]
       Name: `${p.firstName} ${p.lastName}`,
       Age: p.age,
       Gender: p.gender,
-      LastVLDate: p.lastVlDate || 'N/A',
-      LastVLResult: p.lastVlResult || 'N/A',
-      Suppressed: p.vlSuppressed ? 'Yes' : 'No'
+      OTZCategory: p.isOtzPlus ? `OTZ Plus (${p.otzPlusType || 'Enrolled'})` : 'Standard OTZ',
+      BaselineVL_Status: p.isBaselineNil || p.baselineVlStatus === 'Nil' ? 'Nil' : (p.baselineVlResult !== undefined ? 'Recorded' : 'Not Recorded'),
+      BaselineVL_Result: p.isBaselineNil || p.baselineVlStatus === 'Nil' ? 'Nil' : (p.baselineVlResult !== undefined ? p.baselineVlResult : 'N/A'),
+      BaselineVL_Date: p.baselineVlDate || 'N/A',
+      LatestVLDate: p.lastVlDate || 'N/A',
+      LatestVLResult: p.lastVlResult ?? p.viralLoadResult ?? 'N/A',
+      Suppressed: p.vlSuppressed !== undefined ? (p.vlSuppressed ? 'Yes' : 'No') : 'Pending Test'
     }));
 
     downloadCSV(reportData, 'Viral_Load_Statistics');
+  };
+
+  const generateOTZPlusReport = () => {
+    const otzPlusList = patients.filter(p => p.isOtzPlus);
+    const reportData = otzPlusList.map(p => ({
+      ClinicNumber: p.clinicNumber,
+      Name: `${p.firstName} ${p.lastName}`,
+      Age: p.age,
+      Gender: p.gender,
+      OTZPlusType: p.otzPlusType || 'Enrolled',
+      EDD: p.edd || 'N/A',
+      ChildDOB: p.childDob || 'N/A',
+      ChildFeedingMethod: p.childFeedingMethod || 'N/A',
+      Phone: p.phone || 'N/A',
+      EnrollmentDate: p.enrollmentDate,
+      ARTStatus: p.ltfuStatus,
+      BaselineVL: p.isBaselineNil || p.baselineVlStatus === 'Nil' ? 'Nil' : (p.baselineVlResult !== undefined ? p.baselineVlResult : 'N/A'),
+      LatestRoutineVL: p.lastVlResult ?? p.viralLoadResult ?? 'Pending Test',
+      Suppressed: p.vlSuppressed !== undefined ? (p.vlSuppressed ? 'Yes' : 'No') : 'Pending Test'
+    }));
+
+    downloadCSV(reportData, 'OTZ_Plus_Register');
   };
 
   const generateEnrollmentReport = () => {
@@ -349,6 +376,14 @@ export function Reports({ patients, visits, tracks = [] }: { patients: Patient[]
       color: 'text-emerald-600',
       bg: 'bg-emerald-50',
       onDownload: generateVLStatsReport
+    },
+    {
+      title: 'OTZ Plus Register',
+      description: 'Dedicated register of pregnant adolescents and mothers with child, tracking EDD, child age, and feeding practice.',
+      icon: Heart,
+      color: 'text-fuchsia-600',
+      bg: 'bg-fuchsia-50',
+      onDownload: generateOTZPlusReport
     },
     {
       title: 'Patient Enrollment Summary',

@@ -21,6 +21,7 @@ import {
   Trash2,
   Upload,
   GraduationCap,
+  Heart,
 } from 'lucide-react';
 import { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
@@ -56,7 +57,7 @@ export function PatientList({
   const { isAdmin } = useAuth();
   const { privacyMode } = useSettings();
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'All' | 'Active' | 'LTFU' | 'Graduating' | 'Transferred'>('All');
+  const [filter, setFilter] = useState<'All' | 'Active' | 'OTZ Plus' | 'LTFU' | 'Graduating' | 'Transferred'>('All');
   const [importStatus, setImportStatus] = useState<{ type: 'idle' | 'loading' | 'success' | 'error', message: string }>({ type: 'idle', message: '' });
   const [confirmImport, setConfirmImport] = useState<{ patients: Omit<Patient, 'id'>[], show: boolean }>({ patients: [], show: false });
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -92,6 +93,7 @@ export function PatientList({
     
     let matchesFilter = true;
     if (filter === 'Active') matchesFilter = p.ltfuStatus === 'Active';
+    else if (filter === 'OTZ Plus') matchesFilter = Boolean(p.isOtzPlus);
     else if (filter === 'LTFU') matchesFilter = p.ltfuStatus === 'LTFU';
     else if (filter === 'Graduating') matchesFilter = p.age >= 24 && p.ltfuStatus === 'Active';
     else if (filter === 'Transferred') matchesFilter = p.ltfuStatus === 'Transferred Out';
@@ -106,10 +108,11 @@ export function PatientList({
   };
 
   const downloadTemplate = () => {
-    const headers = ['MH NO', 'First Name', 'Last Name', 'Phone', 'Age', 'Gender', 'Address', 'OTZ Enrollment Date', 'ART STATUS'];
+    const headers = ['MH NO', 'First Name', 'Last Name', 'Phone', 'Age', 'Gender', 'OTZ Category', 'OTZ Plus Type', 'Baseline VL', 'Address', 'OTZ Enrollment Date', 'ART STATUS'];
     const sampleData = [
-      ['OTZ-001', 'John', 'Doe', '08012345678', '24', 'Male', '123 Clinic St', '2023-01-15', 'Active'],
-      ['OTZ-002', 'Jane', 'Smith', '09087654321', '19', 'Female', '456 Hospital Rd', '2023-02-20', 'Active']
+      ['OTZ-001', 'John', 'Doe', '08012345678', '24', 'Male', 'Standard OTZ', '', '450', '123 Clinic St', '2023-01-15', 'Active'],
+      ['OTZ-002', 'Jane', 'Smith', '09087654321', '19', 'Female', 'OTZ Plus', 'Pregnant', 'Nil', '456 Hospital Rd', '2023-02-20', 'Active'],
+      ['OTZ-003', 'Mary', 'Johnson', '08098765432', '20', 'Female', 'OTZ Plus', 'Mother with Child', '20', '789 Health Way', '2023-03-10', 'Active']
     ];
     
     const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleData]);
@@ -218,6 +221,9 @@ export function PatientList({
           enrollmentDate: findColIndex(['enrollmentDate', 'otzenrollmentdate', 'otz enrollment date', 'enrolled', 'dateenrolled', 'startdate', 'regdate']),
           dateOfBirth: findColIndex(['dateOfBirth', 'dob', 'birthdate']),
           ltfuStatus: findColIndex(['ltfuStatus', 'artstatus', 'art status', 'status', 'currentstatus']),
+          otzCategory: findColIndex(['otzcategory', 'otzplus', 'category', 'plus']),
+          otzPlusType: findColIndex(['otzplustype', 'plustype', 'pregnancystatus', 'subcategory']),
+          baselineVl: findColIndex(['baselinevl', 'baselineviral', 'baseline', 'prejoiningvl', 'initialvl']),
         };
 
         console.log('Column Mapping Results:', colMap);
@@ -273,7 +279,25 @@ export function PatientList({
             else if (rawStatus.includes('transfer')) status = 'Transferred Out';
           }
 
-          const patient = {
+          // OTZ Plus parsing
+          const rawCat = colMap.otzCategory !== -1 ? String(row[colMap.otzCategory] || '').trim().toLowerCase() : '';
+          const rawPlus = colMap.otzPlusType !== -1 ? String(row[colMap.otzPlusType] || '').trim() : '';
+          const isPlus = rawCat.includes('plus') || rawPlus.length > 0;
+          let plusType: any = undefined;
+          if (isPlus) {
+            if (rawPlus.toLowerCase().includes('child') || rawPlus.toLowerCase().includes('mother') || rawCat.includes('mother')) {
+              plusType = 'Mother with Child';
+            } else {
+              plusType = 'Pregnant';
+            }
+          }
+
+          // Baseline VL parsing (supporting numerical or 'Nil')
+          const rawBaseline = colMap.baselineVl !== -1 ? String(row[colMap.baselineVl] || '').trim() : '';
+          const isNil = rawBaseline.toLowerCase() === 'nil' || rawBaseline.toLowerCase() === 'nill' || rawBaseline.toLowerCase() === 'none';
+          const baselineNum = !isNil && rawBaseline !== '' && !isNaN(Number(rawBaseline)) ? Number(rawBaseline) : undefined;
+
+          const patient: Omit<Patient, 'id'> = {
             clinicNumber: String(row[colMap.clinicNumber] || '').trim() || `TMP-${idx}-${Date.now()}`,
             firstName: fName || 'Unknown',
             lastName: lName || 'Patient',
@@ -284,6 +308,14 @@ export function PatientList({
             enrollmentDate: parseExcelDate(row[colMap.enrollmentDate]) || new Date().toISOString().split('T')[0],
             dateOfBirth: (colMap.dateOfBirth !== -1 ? parseExcelDate(row[colMap.dateOfBirth]) : null) || null,
             ltfuStatus: status,
+            isOtzPlus: isPlus,
+            otzPlusType: plusType,
+            isBaselineNil: isNil,
+            baselineVlStatus: isNil ? 'Nil' : (baselineNum !== undefined ? 'Recorded' : undefined),
+            baselineVlResult: baselineNum,
+            lastVlResult: baselineNum,
+            viralLoadResult: baselineNum,
+            vlSuppressed: baselineNum !== undefined ? baselineNum < 50 : undefined,
           };
 
           if (idx < 2) {
@@ -472,7 +504,7 @@ export function PatientList({
           </Button>
           <Button variant="outline" size="sm" className="gap-2" onClick={() => {
             const csvContent = [
-              ['MH NO', 'First Name', 'Last Name', 'Phone', 'Age', 'Gender', 'Address', 'OTZ Enrollment Date', 'Date of Birth', 'ART STATUS', 'Last Visit', 'Next Appointment', 'Next Counseling', 'VL Status'].join(','),
+              ['MH NO', 'First Name', 'Last Name', 'Phone', 'Age', 'Gender', 'OTZ Category', 'OTZ Plus Type', 'EDD', 'Child DOB', 'Address', 'OTZ Enrollment Date', 'Baseline VL Status', 'Baseline VL Result', 'ART STATUS', 'Last Visit', 'Next Appointment', 'Next Counseling', 'Latest VL Result', 'VL Status'].join(','),
               ...patients.map(p => [
                 `"${p.clinicNumber || ''}"`,
                 `"${p.firstName || ''}"`,
@@ -480,14 +512,20 @@ export function PatientList({
                 `"${p.phone || ''}"`,
                 p.age || '',
                 `"${p.gender || ''}"`,
+                `"${p.isOtzPlus ? 'OTZ Plus' : 'Standard OTZ'}"`,
+                `"${p.otzPlusType || ''}"`,
+                `"${p.edd || ''}"`,
+                `"${p.childDob || ''}"`,
                 `"${p.address || ''}"`,
                 `"${p.enrollmentDate || ''}"`,
-                `"${p.dateOfBirth || ''}"`,
+                `"${p.baselineVlStatus || (p.isBaselineNil ? 'Nil' : '')}"`,
+                `"${p.baselineVlResult !== undefined ? p.baselineVlResult : (p.isBaselineNil ? 'Nil' : '')}"`,
                 `"${p.ltfuStatus || ''}"`,
                 `"${p.lastVisitDate || 'N/A'}"`,
                 `"${getNextAppointment(p.id!, p.nextAppointmentDate) || 'N/A'}"`,
                 `"${p.nextCounselingDate || 'N/A'}"`,
-                p.vlSuppressed ? '"Suppressed"' : '"Unsuppressed"'
+                `"${p.viralLoadResult ?? p.lastVlResult ?? 'Pending'}"`,
+                p.vlSuppressed !== undefined ? (p.vlSuppressed ? '"Suppressed"' : '"Unsuppressed"') : '"Pending"'
               ].join(','))
             ].join('\n');
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -511,7 +549,7 @@ export function PatientList({
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
-              placeholder="Search by name or clinic number..."
+              placeholder="Search by name, clinic number, or phone..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-10"
@@ -519,18 +557,31 @@ export function PatientList({
           </div>
           <div className="flex items-center gap-2">
             <div className="flex flex-wrap gap-1 rounded-xl border border-slate-200 p-1">
-              {(['All', 'Active', 'LTFU', 'Graduating', 'Transferred'] as const).map((f) => (
+              {(['All', 'Active', 'OTZ Plus', 'LTFU', 'Graduating', 'Transferred'] as const).map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
                   className={cn(
-                    'rounded-lg px-3 py-1.5 text-xs font-medium transition-all',
+                    'rounded-lg px-3 py-1.5 text-xs font-semibold transition-all flex items-center gap-1.5',
                     filter === f
-                      ? 'bg-indigo-600 text-white shadow-sm'
+                      ? f === 'OTZ Plus'
+                        ? 'bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white shadow-xs'
+                        : 'bg-indigo-600 text-white shadow-xs'
+                      : f === 'OTZ Plus'
+                      ? 'text-fuchsia-700 hover:bg-fuchsia-50'
                       : 'text-slate-600 hover:bg-slate-50'
                   )}
                 >
+                  {f === 'OTZ Plus' && <Heart className="h-3 w-3 fill-current" />}
                   {f === 'Transferred' ? 'Transferred Out' : f === 'Graduating' ? 'About to Graduate' : f}
+                  {f === 'OTZ Plus' && (
+                    <span className={cn(
+                      "ml-0.5 rounded-full px-1.5 py-0.2 text-[10px]",
+                      filter === f ? "bg-white/20 text-white" : "bg-fuchsia-100 text-fuchsia-800"
+                    )}>
+                      {patients.filter(p => p.isOtzPlus).length}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -542,13 +593,13 @@ export function PatientList({
             <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="px-6 py-4">MH NO</th>
-                <th className="px-6 py-4">Patient Name</th>
+                <th className="px-6 py-4">Patient Name & Category</th>
                 <th className="px-6 py-4">Phone</th>
                 <th className="px-6 py-4">Age/Gender</th>
                 <th className="px-6 py-4">ART STATUS</th>
                 <th className="px-6 py-4">Last Visit</th>
                 <th className="px-6 py-4">Next Appt</th>
-                <th className="px-6 py-4">VL Status</th>
+                <th className="px-6 py-4">VL Status & Baseline</th>
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
@@ -556,7 +607,10 @@ export function PatientList({
               {filteredPatients.map((patient) => (
                 <tr
                   key={patient.id}
-                  className="group transition-colors hover:bg-slate-50/50"
+                  className={cn(
+                    "group transition-colors hover:bg-slate-50/50",
+                    patient.isOtzPlus && "bg-fuchsia-50/15"
+                  )}
                 >
                   <td className="whitespace-nowrap px-6 py-4 font-medium text-slate-900">
                     <button 
@@ -568,15 +622,28 @@ export function PatientList({
                   </td>
                   <td className="whitespace-nowrap px-6 py-4">
                     <div className="flex flex-col">
-                      <button 
-                        onClick={() => onViewDetails(patient)}
-                        className="text-left font-medium text-slate-900 hover:text-indigo-600 hover:underline"
-                      >
-                        {maskName(`${patient.firstName} ${patient.lastName}`, privacyMode)}
-                      </button>
-                      <span className="text-xs text-slate-500">
-                        Enrolled: {formatDate(patient.enrollmentDate)}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => onViewDetails(patient)}
+                          className="text-left font-medium text-slate-900 hover:text-indigo-600 hover:underline"
+                        >
+                          {maskName(`${patient.firstName} ${patient.lastName}`, privacyMode)}
+                        </button>
+                        {patient.isOtzPlus && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-fuchsia-100 text-fuchsia-800 px-2 py-0.5 text-[10px] font-bold border border-fuchsia-200">
+                            <Heart className="h-2.5 w-2.5 fill-fuchsia-600 text-fuchsia-600" />
+                            OTZ Plus
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                        <span>Enrolled: {formatDate(patient.enrollmentDate)}</span>
+                        {patient.isOtzPlus && patient.otzPlusType && (
+                          <span className="text-[11px] font-medium text-fuchsia-700">
+                            • {patient.otzPlusType}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </td>
                   <td className="whitespace-nowrap px-6 py-4 text-slate-600">
@@ -613,19 +680,39 @@ export function PatientList({
                   </td>
                   <td className="whitespace-nowrap px-6 py-4">
                     {patient.vlSuppressed !== undefined ? (
-                      patient.vlSuppressed ? (
-                        <div className="flex items-center gap-1 text-emerald-600">
-                          <CheckCircle2 className="h-4 w-4" />
-                          <span className="text-xs font-medium">Suppressed</span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1 text-rose-600">
-                          <AlertCircle className="h-4 w-4" />
-                          <span className="text-xs font-medium">Unsuppressed</span>
-                        </div>
-                      )
+                      <div>
+                        {patient.vlSuppressed ? (
+                          <div className="flex items-center gap-1 text-emerald-600">
+                            <CheckCircle2 className="h-4 w-4" />
+                            <span className="text-xs font-medium">Suppressed</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1 text-rose-600">
+                            <AlertCircle className="h-4 w-4" />
+                            <span className="text-xs font-medium">Unsuppressed</span>
+                          </div>
+                        )}
+                        {(patient.viralLoadResult !== undefined || patient.lastVlResult !== undefined) && (
+                          <span className="text-[10px] text-slate-500">
+                            {patient.viralLoadResult ?? patient.lastVlResult} c/ml
+                          </span>
+                        )}
+                      </div>
                     ) : (
-                      <span className="text-xs text-slate-400">No Record</span>
+                      <div className="flex flex-col">
+                        <span className="text-xs font-medium text-slate-400">Pending Routine VL</span>
+                        {patient.isBaselineNil || patient.baselineVlStatus === 'Nil' ? (
+                          <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 mt-0.5 inline-block w-fit">
+                            Pre-join: Nil
+                          </span>
+                        ) : patient.baselineVlResult !== undefined ? (
+                          <span className="text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded mt-0.5 inline-block w-fit">
+                            Pre-join: {patient.baselineVlResult} c/ml
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-400">No baseline</span>
+                        )}
+                      </div>
                     )}
                   </td>
                   <td className="whitespace-nowrap px-6 py-4 text-right">

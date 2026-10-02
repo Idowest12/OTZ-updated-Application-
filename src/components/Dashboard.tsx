@@ -16,7 +16,8 @@ import {
   FileText,
   GraduationCap,
   ArrowRightLeft,
-  UserMinus
+  UserMinus,
+  Heart
 } from 'lucide-react';
 import {
   BarChart,
@@ -56,6 +57,7 @@ export function Dashboard({ patients, appointments, visits, tracks = [], onNavig
   };
 
   const activePatients = patients.filter(p => p.ltfuStatus === 'Active').length;
+  const otzPlusPatients = patients.filter(p => p.isOtzPlus);
   const ltfuPatients = patients.filter(p => p.ltfuStatus === 'LTFU').length;
   const graduatedPatients = patients.filter(p => p.ltfuStatus === 'Graduated').length;
   const transferredOutPatients = patients.filter(p => p.ltfuStatus === 'Transferred Out').length;
@@ -110,6 +112,16 @@ export function Dashboard({ patients, appointments, visits, tracks = [], onNavig
       trend: `${((activePatients / (patients.length || 1)) * 100).toFixed(1)}% retention`,
       clickable: true,
       onClick: () => openPatientList('Active Patients', patients.filter(p => p.ltfuStatus === 'Active'))
+    },
+    {
+      label: 'OTZ Plus',
+      value: otzPlusPatients.length.toString(),
+      icon: Heart,
+      color: 'text-fuchsia-600 dark:text-fuchsia-400',
+      bg: 'bg-fuchsia-50 dark:bg-fuchsia-900/20',
+      trend: 'Pregnant / Young Mothers',
+      clickable: true,
+      onClick: () => openPatientList('OTZ Plus Patients (Pregnant / Young Mothers)', otzPlusPatients)
     },
     {
       label: 'LTFU Patients',
