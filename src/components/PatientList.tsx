@@ -7,7 +7,7 @@ import { Card } from '@/src/components/ui/Card';
 import { Input } from '@/src/components/ui/Input';
 import { Button } from '@/src/components/ui/Button';
 import { Patient, Appointment } from '@/src/types';
-import { formatDate, cn } from '@/src/utils';
+import { formatDate, cn, getPatientVlStatus } from '@/src/utils';
 import {
   Search,
   Filter,
@@ -525,7 +525,7 @@ export function PatientList({
                 `"${getNextAppointment(p.id!, p.nextAppointmentDate) || 'N/A'}"`,
                 `"${p.nextCounselingDate || 'N/A'}"`,
                 `"${p.viralLoadResult ?? p.lastVlResult ?? 'Pending'}"`,
-                p.vlSuppressed !== undefined ? (p.vlSuppressed ? '"Suppressed"' : '"Unsuppressed"') : '"Pending"'
+                `"${getPatientVlStatus(p)}"`
               ].join(','))
             ].join('\n');
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -679,26 +679,40 @@ export function PatientList({
                     {formatDate(getNextAppointment(patient.id!, patient.nextAppointmentDate))}
                   </td>
                   <td className="whitespace-nowrap px-6 py-4">
-                    {patient.vlSuppressed !== undefined ? (
-                      <div>
-                        {patient.vlSuppressed ? (
-                          <div className="flex items-center gap-1 text-emerald-600">
-                            <CheckCircle2 className="h-4 w-4" />
-                            <span className="text-xs font-medium">Suppressed</span>
+                    {(() => {
+                      const status = getPatientVlStatus(patient);
+                      if (status === 'Suppressed') {
+                        return (
+                          <div>
+                            <div className="flex items-center gap-1 text-emerald-600">
+                              <CheckCircle2 className="h-4 w-4" />
+                              <span className="text-xs font-semibold">Suppressed</span>
+                            </div>
+                            {(patient.viralLoadResult !== undefined || patient.lastVlResult !== undefined) && (
+                              <span className="text-[10px] text-slate-500 font-medium">
+                                {patient.viralLoadResult ?? patient.lastVlResult} c/ml
+                              </span>
+                            )}
                           </div>
-                        ) : (
-                          <div className="flex items-center gap-1 text-rose-600">
-                            <AlertCircle className="h-4 w-4" />
-                            <span className="text-xs font-medium">Unsuppressed</span>
+                        );
+                      }
+                      if (status === 'Unsuppressed') {
+                        return (
+                          <div>
+                            <div className="flex items-center gap-1 text-rose-600">
+                              <AlertCircle className="h-4 w-4" />
+                              <span className="text-xs font-semibold">Unsuppressed</span>
+                            </div>
+                            {(patient.viralLoadResult !== undefined || patient.lastVlResult !== undefined) && (
+                              <span className="text-[10px] text-rose-500 font-medium">
+                                {patient.viralLoadResult ?? patient.lastVlResult} c/ml
+                              </span>
+                            )}
                           </div>
-                        )}
-                        {(patient.viralLoadResult !== undefined || patient.lastVlResult !== undefined) && (
-                          <span className="text-[10px] text-slate-500">
-                            {patient.viralLoadResult ?? patient.lastVlResult} c/ml
-                          </span>
-                        )}
-                      </div>
-                    ) : (
+                        );
+                      }
+                      return null;
+                    })() || (
                       <div className="flex flex-col">
                         <span className="text-xs font-medium text-slate-400">Pending Routine VL</span>
                         {patient.isBaselineNil || patient.baselineVlStatus === 'Nil' ? (

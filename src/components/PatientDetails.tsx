@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { Patient, Visit, Appointment } from '../types';
-import { formatDate, cn } from '../utils';
+import { formatDate, cn, getPatientVlStatus } from '../utils';
 import { Card } from './ui/Card';
 import { Button } from './ui/Button';
 import { subscribeToVisits, getPatientVisits } from '../services/firestoreService';
@@ -335,17 +335,30 @@ export function PatientDetails({ patient, appointments = [], onClose, onEdit, on
 
               <div className="flex items-center justify-between">
                 <span className="text-sm text-slate-600">VL Status</span>
-                {patient.vlSuppressed !== undefined ? (
-                  <span className={cn(
-                    "inline-flex items-center gap-1 text-xs font-bold",
-                    patient.vlSuppressed ? "text-emerald-600" : "text-rose-600"
-                  )}>
-                    {patient.vlSuppressed ? <CheckCircle2 className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
-                    {patient.vlSuppressed ? 'Suppressed (<50)' : 'Unsuppressed (≥50)'}
-                  </span>
-                ) : (
-                  <span className="text-xs text-slate-400">Pending Test</span>
-                )}
+                {(() => {
+                  const status = getPatientVlStatus(patient);
+                  if (status === 'Suppressed') {
+                    return (
+                      <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Suppressed (&lt;50)
+                      </span>
+                    );
+                  }
+                  if (status === 'Unsuppressed') {
+                    return (
+                      <span className="inline-flex items-center gap-1 text-xs font-bold text-rose-600">
+                        <AlertCircle className="h-3 w-3" />
+                        Unsuppressed (&ge;50)
+                      </span>
+                    );
+                  }
+                  return (
+                    <span className="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                      Pending Test
+                    </span>
+                  );
+                })()}
               </div>
 
               {patient.lastVlDate && (

@@ -685,8 +685,28 @@ export async function addVisit(patientId: string, visit: any, idempotencyKey?: s
     }
 
     batch.update(patientRef, patientUpdate);
+
+    // Automatically clear/complete any pending appointments for this client upon recording a visit
+    try {
+      const apptsQuery = query(
+        collection(db, 'appointments'),
+        where('patientId', '==', patientId),
+        where('status', '==', 'Pending')
+      );
+      const apptsSnapshot = await getDocs(apptsQuery);
+      apptsSnapshot.forEach((apptDoc) => {
+        batch.update(apptDoc.ref, {
+          status: 'Completed',
+          attendedVisitId: newDocRef.id,
+          attendedDate: visit.date,
+          updatedAt: Timestamp.now()
+        });
+      });
+    } catch (apptErr) {
+      console.warn('Could not query appointments to auto-complete in addVisit:', apptErr);
+    }
     
-    // Atomically commit visit write & patient update
+    // Atomically commit visit write, patient update, and appointment clearance
     await batch.commit();
 
     const patientDoc = await getDoc(patientRef);

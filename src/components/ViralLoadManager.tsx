@@ -8,7 +8,7 @@ import { Card } from './ui/Card';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { Patient, CounselingTrack, CounselingSession } from '../types';
-import { formatDate, cn } from '../utils';
+import { formatDate, cn, calculateVlMetrics } from '../utils';
 import { 
   TestTube, 
   Search, 
@@ -35,6 +35,8 @@ export function ViralLoadManager({ patients, tracks, onRecordVl }: ViralLoadMana
   const [filter, setFilter] = useState<'All' | 'Pending' | 'Completed'>('Pending');
   const [isPatientSelectOpen, setIsPatientSelectOpen] = useState(false);
   const [patientSearch, setPatientSearch] = useState('');
+
+  const vlMetrics = calculateVlMetrics(patients.filter(p => p.ltfuStatus === 'Active'));
 
   const filteredTracks = tracks.filter(track => {
     const matchesSearch = 
@@ -297,6 +299,36 @@ export function ViralLoadManager({ patients, tracks, onRecordVl }: ViralLoadMana
                 <MessageSquare className="h-4 w-4" />
                 Send Online Reminder
               </Button>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <h3 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-400">VL Suppression Overview</h3>
+            <div className="space-y-4">
+              <div className="rounded-xl bg-emerald-50 dark:bg-emerald-900/20 p-3.5 border border-emerald-100 dark:border-emerald-900/30">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">Suppressed (&lt;50 c/ml)</span>
+                  <span className="text-sm font-bold text-emerald-700 dark:text-emerald-400">{vlMetrics.suppressionRate}% ({vlMetrics.suppressed})</span>
+                </div>
+                <div className="mt-2 h-1.5 w-full rounded-full bg-emerald-200 dark:bg-emerald-950 overflow-hidden">
+                  <div className="h-full rounded-full bg-emerald-600 transition-all" style={{ width: `${vlMetrics.suppressionRate}%` }} />
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-rose-50 dark:bg-rose-900/20 p-3.5 border border-rose-100 dark:border-rose-900/30">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-rose-800 dark:text-rose-300">Unsuppressed (&ge;50 c/ml)</span>
+                  <span className="text-sm font-bold text-rose-700 dark:text-rose-400">{vlMetrics.unsuppressionRate}% ({vlMetrics.unsuppressed})</span>
+                </div>
+                <div className="mt-2 h-1.5 w-full rounded-full bg-rose-200 dark:bg-rose-950 overflow-hidden">
+                  <div className="h-full rounded-full bg-rose-600 transition-all" style={{ width: `${vlMetrics.unsuppressionRate}%` }} />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
+                <span>Tested: {vlMetrics.tested} clients</span>
+                <span>Pending VL: {vlMetrics.pending}</span>
+              </div>
             </div>
           </Card>
 

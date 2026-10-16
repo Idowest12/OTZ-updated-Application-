@@ -67,13 +67,18 @@ export function VisitForm({ patient, initialType, onSubmit, onCancel }: VisitFor
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="rounded-xl bg-slate-50 p-4">
-        <p className="text-sm font-medium text-slate-900">
-          Recording visit for: <span className="text-indigo-600">{patient.firstName} {patient.lastName}</span>
-        </p>
+      <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-4 border border-slate-100 dark:border-slate-800">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+          <p className="text-sm font-medium text-slate-900 dark:text-white">
+            Recording visit for: <span className="text-indigo-600 dark:text-indigo-400 font-bold">{patient.firstName} {patient.lastName}</span>
+          </p>
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-900/30 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 self-start sm:self-auto">
+            Auto-clears pending appointment
+          </span>
+        </div>
         <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
-          <p className="text-xs text-slate-500">MH NO: {patient.clinicNumber}</p>
-          {patient.phone && <p className="text-xs text-slate-500">Phone: {patient.phone}</p>}
+          <p className="text-xs text-slate-500 dark:text-slate-400">MH NO: {patient.clinicNumber}</p>
+          {patient.phone && <p className="text-xs text-slate-500 dark:text-slate-400">Phone: {patient.phone}</p>}
         </div>
       </div>
 

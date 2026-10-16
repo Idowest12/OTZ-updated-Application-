@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { Patient, Visit, CounselingTrack } from '@/src/types';
 import { format, parseISO, subDays, isBefore, subMonths } from 'date-fns';
+import { getPatientVlStatus } from '@/src/utils';
 
 export function Reports({ patients, visits, tracks = [] }: { patients: Patient[], visits: Visit[], tracks?: CounselingTrack[] }) {
   const [reportPeriod, setReportPeriod] = useState<string>('cumulative');
@@ -186,7 +187,7 @@ export function Reports({ patients, visits, tracks = [] }: { patients: Patient[]
       BaselineVL_Date: p.baselineVlDate || 'N/A',
       LatestVLDate: p.lastVlDate || 'N/A',
       LatestVLResult: p.lastVlResult ?? p.viralLoadResult ?? 'N/A',
-      Suppressed: p.vlSuppressed !== undefined ? (p.vlSuppressed ? 'Yes' : 'No') : 'Pending Test'
+      Suppressed: getPatientVlStatus(p) === 'Suppressed' ? 'Yes' : getPatientVlStatus(p) === 'Unsuppressed' ? 'No' : 'Pending Test'
     }));
 
     downloadCSV(reportData, 'Viral_Load_Statistics');
@@ -208,7 +209,7 @@ export function Reports({ patients, visits, tracks = [] }: { patients: Patient[]
       ARTStatus: p.ltfuStatus,
       BaselineVL: p.isBaselineNil || p.baselineVlStatus === 'Nil' ? 'Nil' : (p.baselineVlResult !== undefined ? p.baselineVlResult : 'N/A'),
       LatestRoutineVL: p.lastVlResult ?? p.viralLoadResult ?? 'Pending Test',
-      Suppressed: p.vlSuppressed !== undefined ? (p.vlSuppressed ? 'Yes' : 'No') : 'Pending Test'
+      Suppressed: getPatientVlStatus(p) === 'Suppressed' ? 'Yes' : getPatientVlStatus(p) === 'Unsuppressed' ? 'No' : 'Pending Test'
     }));
 
     downloadCSV(reportData, 'OTZ_Plus_Register');

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from '@/src/components/ui/Card';
 import { PatientListModal } from '@/src/components/PatientListModal';
 import {
@@ -33,8 +33,9 @@ import {
 } from 'recharts';
 import { format, subMonths, startOfMonth, endOfMonth, isWithinInterval, parseISO } from 'date-fns';
 import { Patient, Visit, CounselingTrack } from '@/src/types';
+import { cn, getPatientVlStatus, calculateVlMetrics } from '@/src/utils';
 
-const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+const COLORS = ['#10b981', '#ef4444', '#f59e0b', '#4f46e5', '#8b5cf6'];
 
 interface DashboardProps {
   patients: Patient[];
@@ -54,28 +55,42 @@ export function Dashboard({ patients, appointments, visits, tracks = [], onNavig
     setListModalTitle(title);
     setListModalPatients(filteredPatients);
     setListModalOpen(true);
+    try {
+      window.history.pushState({ ...window.history.state, modal: 'patient-list' }, '', window.location.hash);
+    } catch {}
   };
 
-  const activePatients = patients.filter(p => p.ltfuStatus === 'Active').length;
+  const closePatientList = () => {
+    if (window.history.state?.modal === 'patient-list') {
+      window.history.back();
+    } else {
+      setListModalOpen(false);
+    }
+  };
+
+  useEffect(() => {
+    const handlePop = (e: PopStateEvent) => {
+      if (listModalOpen && (!e.state || e.state.modal !== 'patient-list')) {
+        setListModalOpen(false);
+      }
+    };
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
+  }, [listModalOpen]);
+
+  const activePatientsList = patients.filter(p => p.ltfuStatus === 'Active');
+  const activePatients = activePatientsList.length;
   const otzPlusPatients = patients.filter(p => p.isOtzPlus);
   const ltfuPatients = patients.filter(p => p.ltfuStatus === 'LTFU').length;
   const graduatedPatients = patients.filter(p => p.ltfuStatus === 'Graduated').length;
   const transferredOutPatients = patients.filter(p => p.ltfuStatus === 'Transferred Out').length;
   const deadPatients = patients.filter(p => p.ltfuStatus === 'Dead').length;
-  const suppressedPatients = patients.filter(p => p.vlSuppressed).length;
   const upcomingVisits = appointments.filter(a => a.status === 'Pending').length;
   const pendingCounseling = tracks.filter(t => !t.completed).length;
 
-  // Find patients who are Active but do not have a Viral Load result recorded, or whose result is pending
-  const pendingVlPatients = patients.filter(p => 
-    p.ltfuStatus === 'Active' && 
-    (
-      p.lastVlResult === undefined || 
-      p.lastVlResult === null || 
-      p.vlSuppressed === undefined || 
-      p.vlSuppressed === null
-    )
-  );
+  // Accurately calculate viral load metrics for active cohort
+  const vlMetrics = calculateVlMetrics(activePatientsList);
+  const pendingVlPatients = activePatientsList.filter(p => getPatientVlStatus(p) === 'Pending');
 
   // Calculate monthly visits for the last 6 months
   const monthlyVisitsData = Array.from({ length: 6 }, (_, i) => {
@@ -191,11 +206,29 @@ export function Dashboard({ patients, appointments, visits, tracks = [], onNavig
     },
   ];
 
-  const suppressionRate = Math.round((suppressedPatients / (patients.filter(p => p.vlSuppressed !== undefined).length || 1)) * 100);
-  
-  const vlStatusData = [
-    { name: 'Suppressed', value: suppressionRate },
-    { name: 'Not Suppressed', value: 100 - suppressionRate },
+  const vlStatusData = vlMetrics.tested > 0 ? [
+    { 
+      name: 'Suppressed (<50)', 
+      count: vlMetrics.suppressed, 
+      value: vlMetrics.suppressionRate, 
+      color: '#10b981',
+      status: 'Suppressed' as const
+    },
+    { 
+      name: 'Unsuppressed (≥50)', 
+      count: vlMetrics.unsuppressed, 
+      value: vlMetrics.unsuppressionRate, 
+      color: '#ef4444',
+      status: 'Unsuppressed' as const
+    },
+  ] : [
+    {
+      name: 'Pending VL Tests',
+      count: vlMetrics.pending,
+      value: 100,
+      color: '#f59e0b',
+      status: 'Pending' as const
+    }
   ];
 
   const recentVisits = [...visits]
@@ -292,69 +325,121 @@ export function Dashboard({ patients, appointments, visits, tracks = [], onNavig
         </Card>
 
         <Card>
-          <div className="mb-6">
-            <h3 className="font-semibold text-slate-900 dark:text-white">Viral Load Suppression</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Current suppression status across active patients</p>
+          <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h3 className="font-semibold text-slate-900 dark:text-white">Viral Load Suppression</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Calculated among tested active cohort ({vlMetrics.tested} of {activePatients} tested)
+              </p>
+            </div>
+            {vlMetrics.tested > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-900/30 px-2.5 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 self-start">
+                {vlMetrics.suppressionRate}% Suppressed
+              </span>
+            )}
           </div>
           <div className="flex h-[300px] items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={vlStatusData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={5}
-                  dataKey="value"
-                  onClick={(data) => {
-                    if (data.name === 'Suppressed') {
-                      openPatientList('Suppressed Patients', patients.filter(p => p.vlSuppressed === true));
-                    } else if (data.name === 'Not Suppressed') {
-                      openPatientList('Unsuppressed Patients', patients.filter(p => p.vlSuppressed === false));
-                    }
-                  }}
-                  className="cursor-pointer"
+            {vlMetrics.tested === 0 ? (
+              <div className="flex flex-col items-center justify-center text-center p-6 space-y-2">
+                <Activity className="h-10 w-10 text-amber-500/60" />
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">No VL Results Recorded Yet</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">All {activePatients} active patients have pending viral load tests.</p>
+                <button
+                  onClick={() => onNavigate ? onNavigate('pending-vl') : undefined}
+                  className="text-xs font-semibold text-indigo-600 hover:underline mt-2 cursor-pointer"
                 >
-                  {vlStatusData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  Enter Pending Results &rarr;
+                </button>
+              </div>
+            ) : (
+              <>
+                <ResponsiveContainer width="55%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={vlStatusData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={55}
+                      outerRadius={90}
+                      paddingAngle={4}
+                      dataKey="value"
+                      onClick={(data: any) => {
+                        if (data.status === 'Suppressed' || data.name?.includes('Suppressed (<50)')) {
+                          openPatientList('Suppressed Patients (<50 c/ml)', activePatientsList.filter(p => getPatientVlStatus(p) === 'Suppressed'));
+                        } else if (data.status === 'Unsuppressed' || data.name?.includes('Unsuppressed')) {
+                          openPatientList('Unsuppressed Patients (≥50 c/ml)', activePatientsList.filter(p => getPatientVlStatus(p) === 'Unsuppressed'));
+                        }
+                      }}
+                      className="cursor-pointer"
+                    >
+                      {vlStatusData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(val: any, name: any, item: any) => [`${item.payload.count} clients (${val}%)`, name]}
+                      contentStyle={{
+                        borderRadius: '12px',
+                        border: 'none',
+                        boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="space-y-3 pr-4 flex-1">
+                  {vlStatusData.map((item) => (
+                    <div 
+                      key={item.name} 
+                      className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer transition-all"
+                      onClick={() => {
+                        if (item.status === 'Suppressed') {
+                          openPatientList('Suppressed Patients (<50 c/ml)', activePatientsList.filter(p => getPatientVlStatus(p) === 'Suppressed'));
+                        } else if (item.status === 'Unsuppressed') {
+                          openPatientList('Unsuppressed Patients (≥50 c/ml)', activePatientsList.filter(p => getPatientVlStatus(p) === 'Unsuppressed'));
+                        }
+                      }}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className="h-3 w-3 rounded-full shrink-0"
+                          style={{ backgroundColor: item.color }}
+                        />
+                        <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                          {item.name}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-xs font-bold text-slate-900 dark:text-white">
+                          {item.count}
+                        </span>
+                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400 ml-1">
+                          ({item.value}%)
+                        </span>
+                      </div>
+                    </div>
                   ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    borderRadius: '12px',
-                    border: 'none',
-                    boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="space-y-3 pr-8">
-              {vlStatusData.map((item, index) => (
-                <div 
-                  key={item.name} 
-                  className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
-                  onClick={() => {
-                    if (item.name === 'Suppressed') {
-                      openPatientList('Suppressed Patients', patients.filter(p => p.vlSuppressed === true));
-                    } else if (item.name === 'Not Suppressed') {
-                      openPatientList('Unsuppressed Patients', patients.filter(p => p.vlSuppressed === false));
-                    }
-                  }}
-                >
-                  <div
-                    className="h-3 w-3 rounded-full"
-                    style={{ backgroundColor: COLORS[index % COLORS.length] }}
-                  />
-                  <div className="flex flex-col">
-                    <span className="text-xs font-medium text-slate-900 dark:text-white">
-                      {item.name}
-                    </span>
-                    <span className="text-xs text-slate-500 dark:text-slate-400">{item.value}%</span>
+                  <div 
+                    className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer transition-all border-t border-slate-100 dark:border-slate-800 pt-2.5"
+                    onClick={() => openPatientList('Pending VL Entry', pendingVlPatients)}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="h-3 w-3 rounded-full bg-amber-400 shrink-0" />
+                      <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                        Pending VL
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
+                        {vlMetrics.pending}
+                      </span>
+                      <span className="text-xs text-slate-400 ml-1">
+                        ({activePatients > 0 ? Math.round((vlMetrics.pending / activePatients) * 100) : 0}%)
+                      </span>
+                    </div>
                   </div>
                 </div>
-              ))}
-            </div>
+              </>
+            )}
           </div>
         </Card>
       </div>
@@ -432,13 +517,14 @@ export function Dashboard({ patients, appointments, visits, tracks = [], onNavig
 
       <PatientListModal
         isOpen={listModalOpen}
-        onClose={() => setListModalOpen(false)}
+        onClose={closePatientList}
         title={listModalTitle}
         patients={listModalPatients}
-        onSelectPatient={onSelectPatient}
+        onSelectPatient={(p) => {
+          closePatientList();
+          if (onSelectPatient) onSelectPatient(p);
+        }}
       />
     </div>
   );
 }
-
-import { cn } from '@/src/utils';

@@ -5,7 +5,7 @@
 
 import { Card } from '@/src/components/ui/Card';
 import { Button } from '@/src/components/ui/Button';
-import { Appointment } from '@/src/types';
+import { Appointment, Patient } from '@/src/types';
 import { formatDate, cn } from '@/src/utils';
 import {
   Calendar as CalendarIcon,
@@ -16,16 +16,20 @@ import {
   XCircle,
   Phone,
   MessageSquare,
+  Plus,
+  Sparkles,
 } from 'lucide-react';
 import { useState } from 'react';
 import { format, parseISO, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 
 interface AppointmentCalendarProps {
   appointments: Appointment[];
+  patients?: Patient[];
   onUpdateStatus: (id: string, status: string) => Promise<void>;
+  onOpenVisit?: (patient: Patient, appointmentId?: string) => void;
 }
 
-export function AppointmentCalendar({ appointments, onUpdateStatus }: AppointmentCalendarProps) {
+export function AppointmentCalendar({ appointments, patients = [], onUpdateStatus, onOpenVisit }: AppointmentCalendarProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
   const monthStart = startOfMonth(currentMonth);
@@ -153,8 +157,35 @@ export function AppointmentCalendar({ appointments, onUpdateStatus }: Appointmen
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {appointment.status === 'Pending' && (
+                    {appointment.status === 'Pending' ? (
                       <>
+                        {onOpenVisit && (
+                          <Button 
+                            size="sm" 
+                            className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs h-8 px-2.5 shadow-xs font-semibold"
+                            onClick={() => {
+                              const matched = patients.find(p => p.id === appointment.patientId || (appointment.clinicNumber && p.clinicNumber === appointment.clinicNumber));
+                              const patientToOpen: Patient = matched || {
+                                id: appointment.patientId,
+                                clinicNumber: appointment.clinicNumber,
+                                firstName: appointment.patientName.split(' ')[0] || appointment.patientName,
+                                lastName: appointment.patientName.split(' ').slice(1).join(' ') || '',
+                                age: 0,
+                                gender: 'Female',
+                                enrollmentDate: appointment.date,
+                                ltfuStatus: 'Active',
+                                phone: appointment.phone
+                              };
+                              // Auto-clear appointment as visited & completed immediately
+                              onUpdateStatus(appointment.id, 'Completed');
+                              onOpenVisit(patientToOpen, appointment.id);
+                            }}
+                            title="Open visit form & automatically clear appointment as visited"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            Open Visit
+                          </Button>
+                        )}
                         <Button 
                           variant="ghost" 
                           size="sm" 
@@ -174,6 +205,16 @@ export function AppointmentCalendar({ appointments, onUpdateStatus }: Appointmen
                           <XCircle className="h-4 w-4" />
                         </Button>
                       </>
+                    ) : appointment.status === 'Completed' ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        Visited
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 dark:bg-rose-900/30 px-2.5 py-1 text-xs font-semibold text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800">
+                        <XCircle className="h-3.5 w-3.5" />
+                        Missed
+                      </span>
                     )}
                   </div>
                 </div>

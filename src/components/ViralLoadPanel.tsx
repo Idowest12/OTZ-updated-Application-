@@ -6,42 +6,12 @@
 import { Card } from '@/src/components/ui/Card';
 import { Button } from '@/src/components/ui/Button';
 import { Patient } from '@/src/types';
-import { formatDate, cn } from '@/src/utils';
-import {
-  Activity,
-  AlertCircle,
-  CheckCircle2,
-  Clock,
-  FlaskConical,
-  Plus,
-} from 'lucide-react';
+import { formatDate, cn, calculateVlMetrics } from '@/src/utils';
+import { Clock, Plus, CheckCircle2, AlertCircle, FlaskConical } from 'lucide-react';
 
-const mockPendingVl: Patient[] = [
-  {
-    id: '4',
-    clinicNumber: 'OTZ-004',
-    firstName: 'Sarah',
-    lastName: 'Connor',
-    age: 19,
-    gender: 'Female',
-    enrollmentDate: '2024-05-10',
-    ltfuStatus: 'Active',
-    lastVlDate: '2024-11-15',
-  },
-  {
-    id: '5',
-    clinicNumber: 'OTZ-005',
-    firstName: 'David',
-    lastName: 'Miller',
-    age: 17,
-    gender: 'Male',
-    enrollmentDate: '2024-06-20',
-    ltfuStatus: 'Active',
-    lastVlDate: '2024-12-01',
-  },
-];
+export function ViralLoadPanel({ patients = [] }: { patients?: Patient[] }) {
+  const vlMetrics = calculateVlMetrics(patients);
 
-export function ViralLoadPanel() {
   return (
     <div className="space-y-6">
       <div>
@@ -58,11 +28,11 @@ export function ViralLoadPanel() {
           <div className="mb-6 flex items-center justify-between">
             <h3 className="font-semibold text-slate-900">Pending VL Results</h3>
             <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
-              {mockPendingVl.length} Pending
+              {vlMetrics.pending} Pending
             </span>
           </div>
           <div className="space-y-4">
-            {mockPendingVl.map((patient) => (
+            {patients.filter(p => !p.vlSuppressed && !p.lastVlResult).slice(0, 5).map((patient) => (
               <div
                 key={patient.id}
                 className="flex items-center justify-between rounded-xl border border-slate-100 p-4 transition-colors hover:bg-slate-50"
@@ -98,10 +68,13 @@ export function ViralLoadPanel() {
                   <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                   <span className="text-sm font-medium text-emerald-900">Suppressed</span>
                 </div>
-                <span className="text-lg font-bold text-emerald-900">85%</span>
+                <span className="text-lg font-bold text-emerald-900">{vlMetrics.suppressionRate}%</span>
               </div>
               <div className="mt-2 h-1.5 w-full rounded-full bg-emerald-200">
-                <div className="h-full w-[85%] rounded-full bg-emerald-600" />
+                <div 
+                  className="h-full rounded-full bg-emerald-600 transition-all" 
+                  style={{ width: `${vlMetrics.suppressionRate}%` }} 
+                />
               </div>
             </div>
 
@@ -111,10 +84,13 @@ export function ViralLoadPanel() {
                   <AlertCircle className="h-4 w-4 text-rose-600" />
                   <span className="text-sm font-medium text-rose-900">Unsuppressed</span>
                 </div>
-                <span className="text-lg font-bold text-rose-900">15%</span>
+                <span className="text-lg font-bold text-rose-900">{vlMetrics.unsuppressionRate}%</span>
               </div>
               <div className="mt-2 h-1.5 w-full rounded-full bg-rose-200">
-                <div className="h-full w-[15%] rounded-full bg-rose-600" />
+                <div 
+                  className="h-full rounded-full bg-rose-600 transition-all" 
+                  style={{ width: `${vlMetrics.unsuppressionRate}%` }} 
+                />
               </div>
             </div>
 
@@ -124,9 +100,9 @@ export function ViralLoadPanel() {
                   <FlaskConical className="h-4 w-4 text-indigo-600" />
                   <span className="text-sm font-medium text-indigo-900">Tests Ordered</span>
                 </div>
-                <span className="text-lg font-bold text-indigo-900">14</span>
+                <span className="text-lg font-bold text-indigo-900">{vlMetrics.tested}</span>
               </div>
-              <p className="mt-1 text-xs text-indigo-600">This month</p>
+              <p className="mt-1 text-xs text-indigo-600">Total verified</p>
             </div>
           </div>
         </Card>
