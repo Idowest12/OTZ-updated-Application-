@@ -266,6 +266,14 @@ export default function App() {
       setSelectedPatient(undefined);
     }
 
+    if (!options?.modal) {
+      setIsPatientModalOpen(false);
+      setIsVisitModalOpen(false);
+      setIsAppointmentModalOpen(false);
+      setIsTransferModalOpen(false);
+      setSelectedVisitType(undefined);
+    }
+
     const hash = '#' + view + (patient?.id ? `?patientId=${patient.id}` : '');
     const state: HistoryState = {
       view,
@@ -344,7 +352,8 @@ export default function App() {
   const handleViewDetails = (patient: Patient, fromView: View = currentView) => {
     // Look up the freshest record from patients state to guarantee latest VL and visit info
     const latestPatient = patients.find(p => p.id === patient.id) || patient;
-    handleNavigate('patient-details', latestPatient, { fromView });
+    const shouldReplace = Boolean(window.history.state?.modal);
+    handleNavigate('patient-details', latestPatient, { fromView, replace: shouldReplace });
   };
 
   const handleRecordVisit = (patient: Patient, type?: string) => {
