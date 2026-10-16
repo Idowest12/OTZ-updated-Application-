@@ -521,7 +521,7 @@ export function Dashboard({ patients, appointments, visits, tracks = [], onNavig
         title={listModalTitle}
         patients={listModalPatients}
         onSelectPatient={(p) => {
-          closePatientList();
+          setListModalOpen(false);
           if (onSelectPatient) onSelectPatient(p);
         }}
       />

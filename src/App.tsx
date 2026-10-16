@@ -11,6 +11,7 @@ interface HistoryState {
   patientId?: string;
   previousView?: View;
   modal?: 'patient' | 'visit' | 'appointment' | 'transfer' | null;
+  isRoot?: boolean;
 }
 import { Dashboard } from './components/Dashboard';
 import { PatientList } from './components/PatientList';
@@ -91,9 +92,27 @@ export default function App() {
   const inFlightAppointmentSubmissions = useRef<Set<string>>(new Set());
 
   const activeSelectedPatient = useMemo(() => {
-    if (!selectedPatient) return undefined;
-    return patients.find((p) => p.id === selectedPatient.id) || selectedPatient;
+    if (selectedPatient?.id && selectedPatient.firstName) {
+      const match = patients.find((p) => p.id === selectedPatient.id);
+      if (match) return match;
+      return selectedPatient;
+    }
+    const currentHash = window.location.hash.replace(/^#/, '');
+    const [, queryStr] = currentHash.split('?');
+    const searchParams = new URLSearchParams(queryStr || '');
+    const targetId = window.history.state?.patientId || searchParams.get('patientId') || selectedPatient?.id;
+    if (targetId && patients.length > 0) {
+      return patients.find(p => p.id === targetId);
+    }
+    return selectedPatient;
   }, [patients, selectedPatient]);
+
+  // Synchronize selectedPatient once activeSelectedPatient has fully resolved from patients
+  useEffect(() => {
+    if (activeSelectedPatient && activeSelectedPatient.firstName && (!selectedPatient || selectedPatient.id !== activeSelectedPatient.id || !selectedPatient.firstName)) {
+      setSelectedPatient(activeSelectedPatient);
+    }
+  }, [activeSelectedPatient, selectedPatient]);
 
   useEffect(() => {
     if (user) {
@@ -148,287 +167,90 @@ export default function App() {
 
     if (!window.history.state || !window.history.state.view) {
       try {
-        window.history.replaceState({
-          view: initialView,
-          patientId: initialPatientId,
-          previousView: 'dashboard',
-          modal: null
-        }, '', window.location.hash || '#dashboard');
+        if (initialView === 'dashboard') {
+          window.history.replaceState({
+            view: 'dashboard',
+            previousView: 'dashboard',
+            isRoot: true,
+            modal: null
+          }, '', '#dashboard');
+        } else {
+          // Keep root dashboard at the base of the history stack
+          window.history.replaceState({
+            view: 'dashboard',
+            previousView: 'dashboard',
+            isRoot: true,
+            modal: null
+          }, '', '#dashboard');
+          window.history.pushState({
+            view: initialView,
+            patientId: initialPatientId,
+            previousView: 'dashboard',
+            modal: null
+          }, '', window.location.hash || `#${initialView}`);
+        }
       } catch (err) {
         console.warn('History API state setup warning:', err);
       }
+
       if (initialView !== currentView) {
         setCurrentView(initialView);
-      }
-      if (initialPatientId && patients.length > 0) {
-        const found = patients.find(p => p.id === initialPatientId);
-        if (found) setSelectedPatient(found);
       }
     }
 
     const onPopState = (e: PopStateEvent) => {
       const state = e.state as HistoryState | null;
-      if (state && state.view) {
-        // Sync modal dialogs
-        setIsPatientModalOpen(state.modal === 'patient');
-        setIsVisitModalOpen(state.modal === 'visit');
-        setIsAppointmentModalOpen(state.modal === 'appointment');
-        setIsTransferModalOpen(state.modal === 'transfer');
-        if (!state.modal) {
-          setSelectedVisitType(undefined);
-        }
+      const popHash = window.location.hash.replace(/^#/, '');
+      const [popHashView, popQueryStr] = popHash.split('?');
+      const popSearchParams = new URLSearchParams(popQueryStr || '');
+      const popPatientId = popSearchParams.get('patientId') || undefined;
 
-        // Sync view state
-        setCurrentView(state.view);
-        if (state.previousView) {
-          setPreviousView(state.previousView);
-        }
-        if (state.patientId) {
-          const found = patients.find(item => item.id === state.patientId);
-          if (found) setSelectedPatient(found);
-        } else if (state.view !== 'patient-details' && !state.modal) {
-          setSelectedPatient(undefined);
-        }
-      } else {
-        // Fallback when popped to origin without state
-        setIsPatientModalOpen(false);
-        setIsVisitModalOpen(false);
-        setIsAppointmentModalOpen(false);
-        setIsTransferModalOpen(false);
+      const targetView: View = (state?.view || (validViews.includes(popHashView as View) ? (popHashView as View) : 'dashboard')) as View;
+      const targetPatientId = state?.patientId || popPatientId;
+
+      // 1. Sync modal dialogs
+      setIsPatientModalOpen(state?.modal === 'patient');
+      setIsVisitModalOpen(state?.modal === 'visit');
+      setIsAppointmentModalOpen(state?.modal === 'appointment');
+      setIsTransferModalOpen(state?.modal === 'transfer');
+      if (!state?.modal) {
         setSelectedVisitType(undefined);
-        setCurrentView('dashboard');
+      }
+
+      // 2. Sync view state
+      setCurrentView(targetView);
+      if (state?.previousView) {
+        setPreviousView(state.previousView);
+      }
+
+      // 3. Sync selected patient
+      if (targetPatientId) {
+        const found = patients.find(item => item.id === targetPatientId);
+        if (found) {
+          setSelectedPatient(found);
+        } else {
+          setSelectedPatient(prev => (prev?.id === targetPatientId ? prev : ({ id: targetPatientId } as Patient)));
+        }
+      } else if (targetView !== 'patient-details' && !state?.modal) {
+        setSelectedPatient(undefined);
+      }
+
+      // 4. Prevent accidental exit when popped to root dashboard
+      if (state?.isRoot || (!state && targetView === 'dashboard')) {
+        try {
+          window.history.replaceState({
+            view: 'dashboard',
+            previousView: 'dashboard',
+            isRoot: true,
+            modal: null
+          }, '', '#dashboard');
+        } catch {}
       }
     };
 
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [patients]);
-
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-slate-50">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" />
-          <p className="text-sm font-medium text-slate-500">Loading OTZ Clinic System...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
-        <div className="w-full max-w-md space-y-6 rounded-2xl bg-white p-8 shadow-xl border border-slate-100">
-          <div className="flex flex-col items-center text-center">
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-100">
-              <Activity className="h-10 w-10 animate-pulse" />
-            </div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-              OTZ CLUB
-            </h1>
-            <p className="mt-2 text-sm text-slate-500">
-              Adolescent & Youth One-Stop Clinic Registry
-            </p>
-          </div>
-
-          {/* Authentication tabs */}
-          <div className="flex rounded-xl bg-slate-100 p-1">
-            <button
-              onClick={() => {
-                setAuthTab('google');
-                setAuthError(null);
-              }}
-              className={`w-full py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 ${
-                authTab === 'google'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Google Sign-In
-            </button>
-            <button
-              onClick={() => {
-                setAuthTab('email');
-                setAuthError(null);
-              }}
-              className={`w-full py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 ${
-                authTab === 'email'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Email & Password
-            </button>
-          </div>
-
-          {authError && (
-            <div className="rounded-xl bg-red-50 p-4 text-xs font-semibold text-red-600 border border-red-100">
-              {authError}
-            </div>
-          )}
-
-          {authTab === 'google' ? (
-            <div className="space-y-4">
-              <p className="text-xs text-slate-500 text-center leading-relaxed">
-                Seamless sign-in with your Google account.
-              </p>
-              
-              <Button
-                type="button"
-                disabled={isAuthenticating}
-                onClick={async () => {
-                  try {
-                    setAuthError(null);
-                    await loginWithGoogle();
-                  } catch (err: any) {
-                    const msg = err.message || '';
-                    if (msg.includes('popup-blocked')) {
-                      setAuthError('Popup blocked by your browser. Please enable popups, use the Email option, or open in a new tab.');
-                    } else if (msg.includes('cancelled-popup-request')) {
-                      setAuthError('Sign-in cancelled or popup was closed. Please try again.');
-                    } else {
-                      setAuthError(err.message || 'Google authentication failed.');
-                    }
-                  }
-                }}
-                className="w-full py-6 text-base flex items-center justify-center gap-3 bg-white border border-slate-200 hover:border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold rounded-xl shadow-sm transition duration-150 disabled:opacity-50"
-                size="lg"
-              >
-                <svg className="h-5 w-5" viewBox="0 0 24 24">
-                  <path
-                    fill="#4285F4"
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                  />
-                  <path
-                    fill="#EA4335"
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  />
-                </svg>
-                {isAuthenticating ? 'Signing In...' : 'Sign In with Google'}
-              </Button>
-
-              {isIframe && (
-                <div className="rounded-xl bg-indigo-50 border border-indigo-100 p-4 space-y-2">
-                  <p className="text-xs font-semibold text-indigo-900 flex items-center gap-1.5">
-                    💡 Running inside preview frame
-                  </p>
-                  <p className="text-xs text-indigo-700 leading-relaxed">
-                    Google Sign-In requires popups, which are often blocked in preview iframes. If nothing opens, we recommend opening the app in a new tab:
-                  </p>
-                  <Button
-                    type="button"
-                    onClick={() => window.open(window.location.href, '_blank')}
-                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 text-xs font-semibold rounded-lg shadow-sm"
-                  >
-                    Open in New Tab ↗
-                  </Button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                setAuthError(null);
-                try {
-                  if (isSignUp) {
-                    if (!displayName.trim()) {
-                      setAuthError('Display name is required for registration.');
-                      return;
-                    }
-                    await signUpWithEmail(email, password, displayName);
-                  } else {
-                    await loginWithEmail(email, password);
-                  }
-                } catch (err: any) {
-                  setAuthError(err.message || 'Authentication failed. Please check credentials.');
-                }
-              }}
-              className="space-y-4"
-            >
-              {isSignUp && (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Full Name</label>
-                  <input
-                    type="text"
-                    required
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="e.g. John Doe"
-                    className="block w-full rounded-xl border border-slate-200 px-4 py-3 text-sm placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition"
-                  />
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Email Address</label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@otzclinic.com"
-                  className="block w-full rounded-xl border border-slate-200 px-4 py-3 text-sm placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Password</label>
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="block w-full rounded-xl border border-slate-200 px-4 py-3 text-sm placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition"
-                />
-              </div>
-
-              <Button
-                type="submit"
-                disabled={isAuthenticating}
-                className="w-full py-3.5 text-base font-semibold rounded-xl shadow-md transition duration-150 disabled:opacity-50"
-              >
-                {isAuthenticating ? 'Processing...' : isSignUp ? 'Create Account' : 'Sign In'}
-              </Button>
-
-              <div className="flex flex-col items-center gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsSignUp(!isSignUp);
-                    setAuthError(null);
-                  }}
-                  className="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition"
-                >
-                  {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Create one"}
-                </button>
-
-                {!isSignUp && (
-                  <div className="text-[11px] text-slate-500 text-center leading-relaxed max-w-[280px]">
-                    💡 Default credentials: <br />
-                    <span className="font-semibold text-slate-700">admin@otzclinic.com</span> with password <span className="font-semibold text-slate-700">admin123456</span>
-                  </div>
-                )}
-              </div>
-            </form>
-          )}
-
-          <div className="text-center text-xs text-slate-400 border-t border-slate-100 pt-4">
-            Authorized clinic staff & youth administrators only.
-          </div>
-        </div>
-      </div>
-    );
-  }
+  }, [patients, currentView]);
 
   const handleNavigate = useCallback((
     view: View, 
@@ -482,21 +304,25 @@ export default function App() {
   };
 
   const closeModal = (modalName?: 'patient' | 'visit' | 'appointment' | 'transfer') => {
+    // Immediately close modal in UI for instantaneous feedback
+    if (modalName === 'patient' || !modalName) setIsPatientModalOpen(false);
+    if (modalName === 'visit' || !modalName) {
+      setIsVisitModalOpen(false);
+      setSelectedVisitType(undefined);
+    }
+    if (modalName === 'appointment' || !modalName) setIsAppointmentModalOpen(false);
+    if (modalName === 'transfer' || !modalName) setIsTransferModalOpen(false);
+
+    // If modal was pushed to history, pop it so browser back aligns
     if (window.history.state?.modal === modalName) {
-      window.history.back();
-    } else {
-      if (modalName === 'patient' || !modalName) setIsPatientModalOpen(false);
-      if (modalName === 'visit' || !modalName) {
-        setIsVisitModalOpen(false);
-        setSelectedVisitType(undefined);
-      }
-      if (modalName === 'appointment' || !modalName) setIsAppointmentModalOpen(false);
-      if (modalName === 'transfer' || !modalName) setIsTransferModalOpen(false);
+      try {
+        window.history.back();
+      } catch {}
     }
   };
 
   const handleGoBack = () => {
-    if (window.history.state && window.history.length > 1) {
+    if (window.history.state && window.history.length > 1 && !window.history.state.isRoot) {
       window.history.back();
     } else {
       const targetView = previousView === 'patient-details' ? 'patients' : (previousView || 'dashboard');
@@ -823,7 +649,21 @@ export default function App() {
           />
         );
       case 'patient-details':
-        if (!activeSelectedPatient) {
+        if (!activeSelectedPatient || !activeSelectedPatient.firstName) {
+          const currentHash = window.location.hash.replace(/^#/, '');
+          const [, queryStr] = currentHash.split('?');
+          const searchParams = new URLSearchParams(queryStr || '');
+          const pId = searchParams.get('patientId') || window.history.state?.patientId;
+
+          if (pId && patients.length === 0) {
+            return (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <div className="h-10 w-10 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent mb-4" />
+                <p className="text-slate-600 dark:text-slate-400 font-medium text-sm">Loading client records...</p>
+              </div>
+            );
+          }
+
           return (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <p className="text-slate-500 mb-4">No client record selected.</p>
@@ -894,6 +734,232 @@ export default function App() {
         );
     }
   };
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" />
+          <p className="text-sm font-medium text-slate-500">Loading OTZ Clinic System...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
+        <div className="w-full max-w-md space-y-6 rounded-2xl bg-white p-8 shadow-xl border border-slate-100">
+          <div className="flex flex-col items-center text-center">
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-100">
+              <Activity className="h-10 w-10 animate-pulse" />
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+              OTZ CLUB
+            </h1>
+            <p className="mt-2 text-sm text-slate-500">
+              Adolescent & Youth One-Stop Clinic Registry
+            </p>
+          </div>
+
+          {/* Authentication tabs */}
+          <div className="flex rounded-xl bg-slate-100 p-1">
+            <button
+              onClick={() => {
+                setAuthTab('google');
+                setAuthError(null);
+              }}
+              className={`w-full py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 ${
+                authTab === 'google'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Google Sign-In
+            </button>
+            <button
+              onClick={() => {
+                setAuthTab('email');
+                setAuthError(null);
+              }}
+              className={`w-full py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 ${
+                authTab === 'email'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Email & Password
+            </button>
+          </div>
+
+          {authError && (
+            <div className="rounded-xl bg-red-50 p-4 text-xs font-semibold text-red-600 border border-red-100">
+              {authError}
+            </div>
+          )}
+
+          {authTab === 'google' ? (
+            <div className="space-y-4">
+              <p className="text-xs text-slate-500 text-center leading-relaxed">
+                Seamless sign-in with your Google account.
+              </p>
+              
+              <Button
+                type="button"
+                disabled={isAuthenticating}
+                onClick={async () => {
+                  try {
+                    setAuthError(null);
+                    await loginWithGoogle();
+                  } catch (err: any) {
+                    const msg = err.message || '';
+                    if (msg.includes('popup-blocked')) {
+                      setAuthError('Popup blocked by your browser. Please enable popups, use the Email option, or open in a new tab.');
+                    } else if (msg.includes('cancelled-popup-request')) {
+                      setAuthError('Sign-in cancelled or popup was closed. Please try again.');
+                    } else {
+                      setAuthError(err.message || 'Google authentication failed.');
+                    }
+                  }
+                }}
+                className="w-full py-6 text-base flex items-center justify-center gap-3 bg-white border border-slate-200 hover:border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold rounded-xl shadow-sm transition duration-150 disabled:opacity-50"
+                size="lg"
+              >
+                <svg className="h-5 w-5" viewBox="0 0 24 24">
+                  <path
+                    fill="#4285F4"
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                  />
+                </svg>
+                {isAuthenticating ? 'Signing In...' : 'Sign In with Google'}
+              </Button>
+
+              {isIframe && (
+                <div className="rounded-xl bg-indigo-50 border border-indigo-100 p-4 space-y-2">
+                  <p className="text-xs font-semibold text-indigo-900 flex items-center gap-1.5">
+                    💡 Running inside preview frame
+                  </p>
+                  <p className="text-xs text-indigo-700 leading-relaxed">
+                    Google Sign-In requires popups, which are often blocked in preview iframes. If nothing opens, we recommend opening the app in a new tab:
+                  </p>
+                  <Button
+                    type="button"
+                    onClick={() => window.open(window.location.href, '_blank')}
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 text-xs font-semibold rounded-lg shadow-sm"
+                  >
+                    Open in New Tab ↗
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setAuthError(null);
+                try {
+                  if (isSignUp) {
+                    if (!displayName.trim()) {
+                      setAuthError('Display name is required for registration.');
+                      return;
+                    }
+                    await signUpWithEmail(email, password, displayName);
+                  } else {
+                    await loginWithEmail(email, password);
+                  }
+                } catch (err: any) {
+                  setAuthError(err.message || 'Authentication failed. Please check credentials.');
+                }
+              }}
+              className="space-y-4"
+            >
+              {isSignUp && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Full Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="e.g. John Doe"
+                    className="block w-full rounded-xl border border-slate-200 px-4 py-3 text-sm placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Email Address</label>
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@otzclinic.com"
+                  className="block w-full rounded-xl border border-slate-200 px-4 py-3 text-sm placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Password</label>
+                <input
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="block w-full rounded-xl border border-slate-200 px-4 py-3 text-sm placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition"
+                />
+              </div>
+
+              <Button
+                type="submit"
+                disabled={isAuthenticating}
+                className="w-full py-3.5 text-base font-semibold rounded-xl shadow-md transition duration-150 disabled:opacity-50"
+              >
+                {isAuthenticating ? 'Processing...' : isSignUp ? 'Create Account' : 'Sign In'}
+              </Button>
+
+              <div className="flex flex-col items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSignUp(!isSignUp);
+                    setAuthError(null);
+                  }}
+                  className="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition"
+                >
+                  {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Create one"}
+                </button>
+
+                {!isSignUp && (
+                  <div className="text-[11px] text-slate-500 text-center leading-relaxed max-w-[280px]">
+                    💡 Default credentials: <br />
+                    <span className="font-semibold text-slate-700">admin@otzclinic.com</span> with password <span className="font-semibold text-slate-700">admin123456</span>
+                  </div>
+                )}
+              </div>
+            </form>
+          )}
+
+          <div className="text-center text-xs text-slate-400 border-t border-slate-100 pt-4">
+            Authorized clinic staff & youth administrators only.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden transition-colors duration-300">
