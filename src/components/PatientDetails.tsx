@@ -279,17 +279,19 @@ export function PatientDetails({ patient, appointments = [], onClose, onEdit, on
               </div>
 
               {/* OTZ Category */}
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-slate-600">OTZ Category</span>
-                {patient.isOtzPlus ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-fuchsia-100 text-fuchsia-800 px-2 py-0.5 text-xs font-bold">
-                    <Heart className="h-2.5 w-2.5 fill-current" />
-                    OTZ Plus
-                  </span>
-                ) : (
-                  <span className="text-xs font-semibold text-slate-700">Standard OTZ</span>
-                )}
-              </div>
+              {patient.gender === 'Female' && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-slate-600">OTZ Category</span>
+                  {patient.isOtzPlus ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-fuchsia-100 text-fuchsia-800 px-2 py-0.5 text-xs font-bold">
+                      <Heart className="h-2.5 w-2.5 fill-current" />
+                      OTZ Plus
+                    </span>
+                  ) : (
+                    <span className="text-xs font-semibold text-slate-700">Standard OTZ</span>
+                  )}
+                </div>
+              )}
 
               {/* Baseline VL (Before Joining) */}
               <div className="flex items-center justify-between border-t border-slate-100 pt-3">

@@ -53,12 +53,12 @@ export function PatientForm({ patient, onSubmit, onCancel }: PatientFormProps) {
         address: patient.address ?? '',
         enrollmentDate: patient.enrollmentDate ?? new Date().toISOString().split('T')[0],
         ltfuStatus: patient.ltfuStatus ?? 'Active',
-        isOtzPlus: Boolean(patient.isOtzPlus || (patient.otzPlusType != null)),
-        otzPlusType: patient.otzPlusType || 'Pregnant',
-        edd: patient.edd ?? '',
-        childDob: patient.childDob ?? '',
-        childAgeMonths: patient.childAgeMonths ?? undefined,
-        childFeedingMethod: patient.childFeedingMethod ?? undefined,
+        isOtzPlus: patient.gender === 'Male' ? false : Boolean(patient.isOtzPlus || (patient.otzPlusType != null)),
+        otzPlusType: patient.gender === 'Male' ? undefined : (patient.otzPlusType || 'Pregnant'),
+        edd: patient.gender === 'Male' ? '' : (patient.edd ?? ''),
+        childDob: patient.gender === 'Male' ? '' : (patient.childDob ?? ''),
+        childAgeMonths: patient.gender === 'Male' ? undefined : (patient.childAgeMonths ?? undefined),
+        childFeedingMethod: patient.gender === 'Male' ? undefined : (patient.childFeedingMethod ?? undefined),
         isBaselineNil: Boolean(patient.isBaselineNil || patient.baselineVlStatus === 'Nil'),
         baselineVlStatus: patient.baselineVlStatus ?? undefined,
         baselineVlResult: patient.baselineVlResult != null ? patient.baselineVlResult : undefined,
@@ -99,8 +99,9 @@ export function PatientForm({ patient, onSubmit, onCancel }: PatientFormProps) {
 
     const submissionData = { ...formData };
 
-    // Format OTZ Plus data
-    if (!submissionData.isOtzPlus) {
+    // Format OTZ Plus data - only applicable when Gender is Female
+    if (submissionData.gender !== 'Female' || !submissionData.isOtzPlus) {
+      submissionData.isOtzPlus = false;
       submissionData.otzPlusType = undefined;
       submissionData.edd = '';
       submissionData.childDob = '';
@@ -227,7 +228,23 @@ export function PatientForm({ patient, onSubmit, onCancel }: PatientFormProps) {
           <select
             className="flex h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
             value={formData.gender}
-            onChange={(e) => setFormData({ ...formData, gender: e.target.value as 'Male' | 'Female' })}
+            onChange={(e) => {
+              const newGender = e.target.value as 'Male' | 'Female';
+              setFormData((prev) => ({
+                ...prev,
+                gender: newGender,
+                ...(newGender === 'Male'
+                  ? {
+                      isOtzPlus: false,
+                      otzPlusType: undefined,
+                      edd: '',
+                      childDob: '',
+                      childAgeMonths: undefined,
+                      childFeedingMethod: undefined,
+                    }
+                  : {}),
+              }));
+            }}
           >
             <option value="Female">Female</option>
             <option value="Male">Male</option>
@@ -263,132 +280,134 @@ export function PatientForm({ patient, onSubmit, onCancel }: PatientFormProps) {
         </div>
       </div>
 
-      {/* SECTION 1: OTZ PLUS IDENTIFICATION (Pregnant / Mother with Child) */}
-      <div className="rounded-2xl border-2 border-fuchsia-100 bg-gradient-to-br from-fuchsia-50/60 via-purple-50/30 to-pink-50/40 p-5 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-fuchsia-100 text-fuchsia-700 shadow-xs">
-              <Heart className="h-5 w-5 fill-fuchsia-500 text-fuchsia-600" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h4 className="text-sm font-bold text-slate-900">OTZ Category</h4>
-                <span className="inline-flex items-center gap-1 rounded-full bg-fuchsia-100 px-2 py-0.5 text-[10px] font-bold text-fuchsia-800">
-                  <Sparkles className="h-3 w-3" />
-                  OTZ Plus Support
-                </span>
+      {/* SECTION 1: OTZ PLUS IDENTIFICATION (Pregnant / Mother with Child) - ONLY SHOWN WHEN GENDER IS FEMALE */}
+      {formData.gender === 'Female' && (
+        <div className="rounded-2xl border-2 border-fuchsia-100 bg-gradient-to-br from-fuchsia-50/60 via-purple-50/30 to-pink-50/40 p-5 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-fuchsia-100 text-fuchsia-700 shadow-xs">
+                <Heart className="h-5 w-5 fill-fuchsia-500 text-fuchsia-600" />
               </div>
-              <p className="text-xs text-slate-500">
-                Identify pregnant adolescents or young mothers with a child (OTZ Plus)
-              </p>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-bold text-slate-900">OTZ Category</h4>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-fuchsia-100 px-2 py-0.5 text-[10px] font-bold text-fuchsia-800">
+                    <Sparkles className="h-3 w-3" />
+                    OTZ Plus Support
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500">
+                  Identify pregnant adolescents or young mothers with a child (OTZ Plus)
+                </p>
+              </div>
+            </div>
+
+            <div className="inline-flex rounded-xl border border-fuchsia-200 bg-white p-1 shadow-xs">
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, isOtzPlus: false, otzPlusType: undefined })}
+                className={cn(
+                  'rounded-lg px-3 py-1.5 text-xs font-semibold transition-all',
+                  !formData.isOtzPlus
+                    ? 'bg-slate-800 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                )}
+              >
+                Standard OTZ
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFormData({ 
+                    ...formData, 
+                    isOtzPlus: true, 
+                    otzPlusType: formData.otzPlusType || 'Pregnant',
+                    gender: 'Female' // OTZ Plus is for pregnant or mothers with child
+                  });
+                }}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all',
+                  formData.isOtzPlus
+                    ? 'bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white shadow-xs'
+                    : 'text-fuchsia-700 hover:bg-fuchsia-50'
+                )}
+              >
+                <Heart className="h-3.5 w-3.5 fill-current" />
+                OTZ Plus
+              </button>
             </div>
           </div>
 
-          <div className="inline-flex rounded-xl border border-fuchsia-200 bg-white p-1 shadow-xs">
-            <button
-              type="button"
-              onClick={() => setFormData({ ...formData, isOtzPlus: false, otzPlusType: undefined })}
-              className={cn(
-                'rounded-lg px-3 py-1.5 text-xs font-semibold transition-all',
-                !formData.isOtzPlus
-                  ? 'bg-slate-800 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              )}
-            >
-              Standard OTZ
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setFormData({ 
-                  ...formData, 
-                  isOtzPlus: true, 
-                  otzPlusType: formData.otzPlusType || 'Pregnant',
-                  gender: 'Female' // OTZ Plus is for pregnant or mothers with child
-                });
-              }}
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all',
-                formData.isOtzPlus
-                  ? 'bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white shadow-xs'
-                  : 'text-fuchsia-700 hover:bg-fuchsia-50'
-              )}
-            >
-              <Heart className="h-3.5 w-3.5 fill-current" />
-              OTZ Plus
-            </button>
-          </div>
-        </div>
-
-        {/* Detailed OTZ Plus Options */}
-        {formData.isOtzPlus && (
-          <div className="rounded-xl border border-fuchsia-200/80 bg-white/90 p-4 space-y-4 backdrop-blur-xs">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-wider text-fuchsia-900">
-                  OTZ Plus Status / Type <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  required
-                  className="flex h-10 w-full rounded-xl border border-fuchsia-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-500"
-                  value={formData.otzPlusType || 'Pregnant'}
-                  onChange={(e) => setFormData({ ...formData, otzPlusType: e.target.value as OtzPlusType })}
-                >
-                  <option value="Pregnant">Pregnant</option>
-                  <option value="Mother with Child">Mother with Child (Postnatal / Breastfeeding)</option>
-                  <option value="Pregnant & Mother with Child">Pregnant & Mother with Child</option>
-                </select>
-              </div>
-
-              {(formData.otzPlusType === 'Pregnant' || formData.otzPlusType === 'Pregnant & Mother with Child') && (
-                <Input
-                  label="Expected Delivery Date (EDD)"
-                  type="date"
-                  value={formData.edd || ''}
-                  onChange={(e) => setFormData({ ...formData, edd: e.target.value })}
-                  placeholder="Expected Delivery Date"
-                />
-              )}
-
-              {(formData.otzPlusType === 'Mother with Child' || formData.otzPlusType === 'Pregnant & Mother with Child') && (
-                <Input
-                  label="Child's Date of Birth"
-                  type="date"
-                  value={formData.childDob || ''}
-                  onChange={(e) => setFormData({ ...formData, childDob: e.target.value })}
-                  placeholder="Child DOB"
-                />
-              )}
-
-              {(formData.otzPlusType === 'Mother with Child' || formData.otzPlusType === 'Pregnant & Mother with Child') && (
+          {/* Detailed OTZ Plus Options */}
+          {formData.isOtzPlus && (
+            <div className="rounded-xl border border-fuchsia-200/80 bg-white/90 p-4 space-y-4 backdrop-blur-xs">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold uppercase tracking-wider text-fuchsia-900">
-                    Infant Feeding Method
+                    OTZ Plus Status / Type <span className="text-rose-500">*</span>
                   </label>
                   <select
-                    className="flex h-10 w-full rounded-xl border border-fuchsia-200 bg-white px-3 py-2 text-sm text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-500"
-                    value={formData.childFeedingMethod || ''}
-                    onChange={(e) => setFormData({ ...formData, childFeedingMethod: e.target.value as any })}
+                    required
+                    className="flex h-10 w-full rounded-xl border border-fuchsia-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-500"
+                    value={formData.otzPlusType || 'Pregnant'}
+                    onChange={(e) => setFormData({ ...formData, otzPlusType: e.target.value as OtzPlusType })}
                   >
-                    <option value="">-- Select Feeding Practice --</option>
-                    <option value="Exclusive Breastfeeding">Exclusive Breastfeeding (EBF)</option>
-                    <option value="Mixed Feeding">Mixed Feeding (MF)</option>
-                    <option value="Replacement Feeding">Replacement Feeding (RF)</option>
-                    <option value="Weaned">Weaned</option>
+                    <option value="Pregnant">Pregnant</option>
+                    <option value="Mother with Child">Mother with Child (Postnatal / Breastfeeding)</option>
+                    <option value="Pregnant & Mother with Child">Pregnant & Mother with Child</option>
                   </select>
                 </div>
-              )}
-            </div>
 
-            <div className="rounded-lg bg-fuchsia-50/80 px-3 py-2 text-xs text-fuchsia-800 flex items-center gap-2">
-              <Baby className="h-4 w-4 shrink-0 text-fuchsia-600" />
-              <span>
-                <strong>OTZ Plus Enrolled:</strong> Client will be flagged with a special OTZ Plus badge and tracked for PMTCT, adherence, and infant monitoring.
-              </span>
+                {(formData.otzPlusType === 'Pregnant' || formData.otzPlusType === 'Pregnant & Mother with Child') && (
+                  <Input
+                    label="Expected Delivery Date (EDD)"
+                    type="date"
+                    value={formData.edd || ''}
+                    onChange={(e) => setFormData({ ...formData, edd: e.target.value })}
+                    placeholder="Expected Delivery Date"
+                  />
+                )}
+
+                {(formData.otzPlusType === 'Mother with Child' || formData.otzPlusType === 'Pregnant & Mother with Child') && (
+                  <Input
+                    label="Child's Date of Birth"
+                    type="date"
+                    value={formData.childDob || ''}
+                    onChange={(e) => setFormData({ ...formData, childDob: e.target.value })}
+                    placeholder="Child DOB"
+                  />
+                )}
+
+                {(formData.otzPlusType === 'Mother with Child' || formData.otzPlusType === 'Pregnant & Mother with Child') && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-wider text-fuchsia-900">
+                      Infant Feeding Method
+                    </label>
+                    <select
+                      className="flex h-10 w-full rounded-xl border border-fuchsia-200 bg-white px-3 py-2 text-sm text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-500"
+                      value={formData.childFeedingMethod || ''}
+                      onChange={(e) => setFormData({ ...formData, childFeedingMethod: e.target.value as any })}
+                    >
+                      <option value="">-- Select Feeding Practice --</option>
+                      <option value="Exclusive Breastfeeding">Exclusive Breastfeeding (EBF)</option>
+                      <option value="Mixed Feeding">Mixed Feeding (MF)</option>
+                      <option value="Replacement Feeding">Replacement Feeding (RF)</option>
+                      <option value="Weaned">Weaned</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-lg bg-fuchsia-50/80 px-3 py-2 text-xs text-fuchsia-800 flex items-center gap-2">
+                <Baby className="h-4 w-4 shrink-0 text-fuchsia-600" />
+                <span>
+                  <strong>OTZ Plus Enrolled:</strong> Client will be flagged with a special OTZ Plus badge and tracked for PMTCT, adherence, and infant monitoring.
+                </span>
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {/* SECTION 2: BASELINE / PRE-JOINING VIRAL LOAD WITH NIL BUTTON */}
       <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 space-y-4">
