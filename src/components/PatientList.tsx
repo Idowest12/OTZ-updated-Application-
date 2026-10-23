@@ -22,6 +22,7 @@ import {
   Upload,
   GraduationCap,
   Heart,
+  Calendar,
 } from 'lucide-react';
 import { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
@@ -57,7 +58,7 @@ export function PatientList({
   const { isAdmin } = useAuth();
   const { privacyMode } = useSettings();
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'All' | 'Active' | 'OTZ Plus' | 'LTFU' | 'Graduating' | 'Transferred'>('All');
+  const [filter, setFilter] = useState<'All' | 'Active' | 'With Appointment' | 'OTZ Plus' | 'LTFU' | 'Graduating' | 'Transferred'>('All');
   const [importStatus, setImportStatus] = useState<{ type: 'idle' | 'loading' | 'success' | 'error', message: string }>({ type: 'idle', message: '' });
   const [confirmImport, setConfirmImport] = useState<{ patients: Omit<Patient, 'id'>[], show: boolean }>({ patients: [], show: false });
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -93,12 +94,22 @@ export function PatientList({
     
     let matchesFilter = true;
     if (filter === 'Active') matchesFilter = p.ltfuStatus === 'Active';
+    else if (filter === 'With Appointment') matchesFilter = Boolean(getNextAppointment(p.id, p.nextAppointmentDate));
     else if (filter === 'OTZ Plus') matchesFilter = Boolean(p.isOtzPlus);
     else if (filter === 'LTFU') matchesFilter = p.ltfuStatus === 'LTFU';
     else if (filter === 'Graduating') matchesFilter = p.age >= 24 && p.ltfuStatus === 'Active';
     else if (filter === 'Transferred') matchesFilter = p.ltfuStatus === 'Transferred Out';
     
     return matchesSearch && matchesFilter;
+  }).sort((a, b) => {
+    if (filter === 'With Appointment') {
+      const apptA = getNextAppointment(a.id, a.nextAppointmentDate);
+      const apptB = getNextAppointment(b.id, b.nextAppointmentDate);
+      if (apptA && !apptB) return -1;
+      if (!apptA && apptB) return 1;
+      if (apptA && apptB) return new Date(apptA).getTime() - new Date(apptB).getTime();
+    }
+    return 0;
   });
 
   const handleDelete = (id: string) => {
@@ -557,7 +568,7 @@ export function PatientList({
           </div>
           <div className="flex items-center gap-2">
             <div className="flex flex-wrap gap-1 rounded-xl border border-slate-200 p-1">
-              {(['All', 'Active', 'OTZ Plus', 'LTFU', 'Graduating', 'Transferred'] as const).map((f) => (
+              {(['All', 'Active', 'With Appointment', 'OTZ Plus', 'LTFU', 'Graduating', 'Transferred'] as const).map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
@@ -566,14 +577,27 @@ export function PatientList({
                     filter === f
                       ? f === 'OTZ Plus'
                         ? 'bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white shadow-xs'
+                        : f === 'With Appointment'
+                        ? 'bg-amber-500 text-white shadow-xs'
                         : 'bg-indigo-600 text-white shadow-xs'
                       : f === 'OTZ Plus'
                       ? 'text-fuchsia-700 hover:bg-fuchsia-50'
+                      : f === 'With Appointment'
+                      ? 'text-amber-700 hover:bg-amber-50'
                       : 'text-slate-600 hover:bg-slate-50'
                   )}
                 >
                   {f === 'OTZ Plus' && <Heart className="h-3 w-3 fill-current" />}
+                  {f === 'With Appointment' && <Calendar className="h-3 w-3" />}
                   {f === 'Transferred' ? 'Transferred Out' : f === 'Graduating' ? 'About to Graduate' : f}
+                  {f === 'With Appointment' && (
+                    <span className={cn(
+                      "ml-0.5 rounded-full px-1.5 py-0.2 text-[10px]",
+                      filter === f ? "bg-white/20 text-white" : "bg-amber-100 text-amber-800"
+                    )}>
+                      {patients.filter(p => Boolean(getNextAppointment(p.id, p.nextAppointmentDate))).length}
+                    </span>
+                  )}
                   {f === 'OTZ Plus' && (
                     <span className={cn(
                       "ml-0.5 rounded-full px-1.5 py-0.2 text-[10px]",

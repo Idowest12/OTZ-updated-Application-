@@ -18,8 +18,9 @@ import {
   MessageSquare,
   Plus,
   Sparkles,
+  Search,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { format, parseISO, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 
 interface AppointmentCalendarProps {
@@ -31,19 +32,49 @@ interface AppointmentCalendarProps {
 
 export function AppointmentCalendar({ appointments, patients = [], onUpdateStatus, onOpenVisit }: AppointmentCalendarProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [statusFilter, setStatusFilter] = useState<'All' | 'Pending' | 'Completed' | 'Missed'>('All');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
 
-  const monthlyAppointments = appointments.filter(a => {
-    const date = parseISO(a.date);
-    return isWithinInterval(date, { start: monthStart, end: monthEnd });
-  });
+  const monthlyAppointments = useMemo(() => {
+    return appointments.filter(a => {
+      const date = parseISO(a.date);
+      return isWithinInterval(date, { start: monthStart, end: monthEnd });
+    });
+  }, [appointments, monthStart, monthEnd]);
 
   const pendingCount = monthlyAppointments.filter(a => a.status === 'Pending').length;
   const completedCount = monthlyAppointments.filter(a => a.status === 'Completed').length;
   const missedCount = monthlyAppointments.filter(a => a.status === 'Missed').length;
   const totalCount = monthlyAppointments.length;
+
+  // Prioritize Pending appointments at the very top, sorted chronologically (earliest first)
+  const sortedAndFilteredAppointments = useMemo(() => {
+    const sorted = [...monthlyAppointments].sort((a, b) => {
+      // 1. Pending always comes at the top!
+      if (a.status === 'Pending' && b.status !== 'Pending') return -1;
+      if (a.status !== 'Pending' && b.status === 'Pending') return 1;
+
+      // 2. If both are Pending, sort by date ascending (nearest upcoming first)
+      if (a.status === 'Pending' && b.status === 'Pending') {
+        return new Date(a.date).getTime() - new Date(b.date).getTime();
+      }
+
+      // 3. For Completed/Missed, sort by date descending (most recent first)
+      return new Date(b.date).getTime() - new Date(a.date).getTime();
+    });
+
+    return sorted.filter(a => {
+      const matchesStatus = statusFilter === 'All' ? true : a.status === statusFilter;
+      const matchesSearch = searchQuery === '' || 
+        (a.patientName && a.patientName.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (a.clinicNumber && a.clinicNumber.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (a.phone && a.phone.includes(searchQuery));
+      return matchesStatus && matchesSearch;
+    });
+  }, [monthlyAppointments, statusFilter, searchQuery]);
 
   const handlePrevMonth = () => {
     setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
@@ -79,37 +110,126 @@ export function AppointmentCalendar({ appointments, patients = [], onUpdateStatu
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
-          <div className="mb-6 flex items-center justify-between">
-            <h3 className="font-semibold text-slate-900 dark:text-white">Upcoming Appointments</h3>
-            <div className="flex items-center gap-2">
-              <span className="flex items-center gap-1 text-xs font-medium text-amber-600 dark:text-amber-500">
-                <Clock className="h-3 w-3" />
-                Pending
-              </span>
-              <span className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-500">
-                <CheckCircle2 className="h-3 w-3" />
-                Completed
-              </span>
+          <div className="mb-5 flex flex-col gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>Upcoming Appointments</span>
+                  {pendingCount > 0 && (
+                    <span className="rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 px-2 py-0.5 text-[11px] font-bold">
+                      {pendingCount} Pending at Top
+                    </span>
+                  )}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Pending visits appear at the top so you don&apos;t have to scroll.
+                </p>
+              </div>
+
+              {/* Status Filter Buttons */}
+              <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl self-start sm:self-auto flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('All')}
+                  className={cn(
+                    "px-2.5 py-1 text-xs font-semibold rounded-lg transition-all",
+                    statusFilter === 'All'
+                      ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                  )}
+                >
+                  All ({totalCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('Pending')}
+                  className={cn(
+                    "flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg transition-all",
+                    statusFilter === 'Pending'
+                      ? "bg-amber-500 text-white shadow-xs"
+                      : "text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                  )}
+                >
+                  <Clock className="h-3 w-3" />
+                  Pending ({pendingCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('Completed')}
+                  className={cn(
+                    "flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg transition-all",
+                    statusFilter === 'Completed'
+                      ? "bg-emerald-600 text-white shadow-xs"
+                      : "text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+                  )}
+                >
+                  <CheckCircle2 className="h-3 w-3" />
+                  Completed ({completedCount})
+                </button>
+                {missedCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('Missed')}
+                    className={cn(
+                      "flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg transition-all",
+                      statusFilter === 'Missed'
+                        ? "bg-rose-600 text-white shadow-xs"
+                        : "text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                    )}
+                  >
+                    <XCircle className="h-3 w-3" />
+                    Missed ({missedCount})
+                  </button>
+                )}
+              </div>
             </div>
+
+            {/* Quick search input */}
+            {monthlyAppointments.length > 3 && (
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Quick filter by patient name, clinic number, or phone..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 pl-9 pr-3 py-1.5 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+            )}
           </div>
           <div className="space-y-4">
-            {monthlyAppointments.length === 0 ? (
+            {sortedAndFilteredAppointments.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <CalendarIcon className="mb-2 h-12 w-12 text-slate-200 dark:text-slate-700" />
-                <p className="text-sm text-slate-500 dark:text-slate-400">No appointments scheduled for this month.</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {searchQuery || statusFilter !== 'All' 
+                    ? 'No appointments found matching this filter.' 
+                    : 'No appointments scheduled for this month.'}
+                </p>
               </div>
             ) : (
-              monthlyAppointments.map((appointment) => (
+              sortedAndFilteredAppointments.map((appointment) => (
                 <div
                   key={appointment.id}
-                  className="flex items-center justify-between rounded-xl border border-slate-100 dark:border-slate-800 p-4 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                  className={cn(
+                    "flex items-center justify-between rounded-xl border p-4 transition-colors",
+                    appointment.status === 'Pending'
+                      ? "border-amber-200 bg-amber-50/20 dark:border-amber-900/40 dark:bg-amber-950/10 hover:bg-amber-50/40"
+                      : "border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                  )}
                 >
                   <div className="flex items-center gap-4">
-                    <div className="flex h-12 w-12 flex-col items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400">
-                      <span className="text-xs font-bold uppercase tracking-tighter">
+                    <div className={cn(
+                      "flex h-12 w-12 flex-col items-center justify-center rounded-lg font-bold",
+                      appointment.status === 'Pending'
+                        ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 ring-1 ring-amber-300 dark:ring-amber-700"
+                        : "bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400"
+                    )}>
+                      <span className="text-xs uppercase tracking-tighter">
                         {format(parseISO(appointment.date), 'MMM')}
                       </span>
-                      <span className="text-lg font-bold leading-none">
+                      <span className="text-lg leading-none">
                         {format(parseISO(appointment.date), 'd')}
                       </span>
                     </div>
@@ -118,6 +238,12 @@ export function AppointmentCalendar({ appointments, patients = [], onUpdateStatu
                         <p className="text-sm font-semibold text-slate-900 dark:text-white">
                           {appointment.patientName}
                         </p>
+                        {appointment.status === 'Pending' && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300 px-2 py-0.5 text-[10px] font-bold">
+                            <Clock className="h-2.5 w-2.5" />
+                            Pending
+                          </span>
+                        )}
                         {appointment.type && (
                           <span className={cn(
                             "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",

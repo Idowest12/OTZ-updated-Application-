@@ -325,25 +325,69 @@ export function Dashboard({ patients, appointments, visits, tracks = [], onNavig
         </Card>
 
         <Card>
-          <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="mb-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3">
             <div>
-              <h3 className="font-semibold text-slate-900 dark:text-white">Viral Load Suppression</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Calculated among tested active cohort ({vlMetrics.tested} of {activePatients} tested)
+              <h3 className="font-semibold text-slate-900 dark:text-white">Viral Load Suppression & Coverage</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Cohort coverage: <span className="font-semibold text-indigo-600 dark:text-indigo-400">{vlMetrics.coverageRate}%</span> ({vlMetrics.tested} of {activePatients} active clients tested)
               </p>
             </div>
-            {vlMetrics.tested > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-900/30 px-2.5 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 self-start">
-                {vlMetrics.suppressionRate}% Suppressed
+            <div className="flex items-center gap-2 flex-wrap">
+              <span 
+                className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 px-2.5 py-1 text-xs font-bold text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800"
+                title={`VL Coverage: ${vlMetrics.tested} tested out of ${activePatients} active clients on ART (${vlMetrics.coverageRate}%)`}
+              >
+                <Activity className="h-3 w-3" />
+                {vlMetrics.coverageRate}% Coverage
               </span>
-            )}
+              {vlMetrics.tested > 0 && (
+                <span 
+                  className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 px-2.5 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
+                  title={`VL Suppression: ${vlMetrics.suppressed} suppressed out of ${vlMetrics.tested} tested clients (<50 c/mL)`}
+                >
+                  <CheckCircle2 className="h-3 w-3" />
+                  {vlMetrics.suppressionRate}% Suppressed
+                </span>
+              )}
+            </div>
           </div>
-          <div className="flex h-[300px] items-center justify-center">
+
+          {/* Dual Coverage & Suppression Indicators */}
+          <div className="grid grid-cols-2 gap-3 mb-5 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800">
+            <div>
+              <div className="flex items-center justify-between text-xs mb-1.5">
+                <span className="font-semibold text-slate-600 dark:text-slate-400">VL Coverage</span>
+                <span className="font-bold text-indigo-600 dark:text-indigo-400">{vlMetrics.coverageRate}% ({vlMetrics.tested}/{activePatients})</span>
+              </div>
+              <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
+                <div 
+                  className="bg-indigo-600 dark:bg-indigo-500 h-2 rounded-full transition-all duration-500" 
+                  style={{ width: `${Math.min(100, vlMetrics.coverageRate)}%` }} 
+                />
+              </div>
+            </div>
+            <div>
+              <div className="flex items-center justify-between text-xs mb-1.5">
+                <span className="font-semibold text-slate-600 dark:text-slate-400">VL Suppression</span>
+                <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                  {vlMetrics.tested > 0 ? `${vlMetrics.suppressionRate}% (${vlMetrics.suppressed}/${vlMetrics.tested})` : '0%'}
+                </span>
+              </div>
+              <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
+                <div 
+                  className="bg-emerald-500 dark:bg-emerald-400 h-2 rounded-full transition-all duration-500" 
+                  style={{ width: `${Math.min(100, vlMetrics.suppressionRate)}%` }} 
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex h-[280px] items-center justify-center">
             {vlMetrics.tested === 0 ? (
               <div className="flex flex-col items-center justify-center text-center p-6 space-y-2">
                 <Activity className="h-10 w-10 text-amber-500/60" />
                 <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">No VL Results Recorded Yet</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">All {activePatients} active patients have pending viral load tests.</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">0% Coverage: All {activePatients} active patients have pending viral load tests.</p>
                 <button
                   onClick={() => onNavigate ? onNavigate('pending-vl') : undefined}
                   className="text-xs font-semibold text-indigo-600 hover:underline mt-2 cursor-pointer"
@@ -425,7 +469,7 @@ export function Dashboard({ patients, appointments, visits, tracks = [], onNavig
                     <div className="flex items-center gap-2.5">
                       <div className="h-3 w-3 rounded-full bg-amber-400 shrink-0" />
                       <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
-                        Pending VL
+                        Pending VL (Uncovered)
                       </span>
                     </div>
                     <div className="text-right">

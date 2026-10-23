@@ -70,6 +70,7 @@ export interface VLMetrics {
   suppressionRate: number;
   unsuppressionRate: number;
   total: number;
+  coverageRate: number;
 }
 
 /**
@@ -113,6 +114,7 @@ export function getPatientVlStatus(patient: {
 /**
  * Accurately calculates viral load metrics and percentage rates.
  * The suppression rate is calculated solely among tested clients (tested = suppressed + unsuppressed).
+ * The coverage rate is calculated as the proportion of eligible clients tested (tested / total).
  * Pending clients are not miscalculated as unsuppressed.
  */
 export function calculateVlMetrics(patients: Array<any>): VLMetrics {
@@ -134,6 +136,7 @@ export function calculateVlMetrics(patients: Array<any>): VLMetrics {
   const tested = suppressed + unsuppressed;
   const suppressionRate = tested > 0 ? Math.round((suppressed / tested) * 100) : 0;
   const unsuppressionRate = tested > 0 ? 100 - suppressionRate : 0;
+  const coverageRate = patients.length > 0 ? Math.round((tested / patients.length) * 100) : 0;
 
   return {
     suppressed,
@@ -143,5 +146,6 @@ export function calculateVlMetrics(patients: Array<any>): VLMetrics {
     suppressionRate,
     unsuppressionRate,
     total: patients.length,
+    coverageRate,
   };
 }
