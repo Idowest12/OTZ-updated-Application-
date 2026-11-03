@@ -5,7 +5,7 @@
 
 import { Card } from '@/src/components/ui/Card';
 import { Button } from '@/src/components/ui/Button';
-import { Appointment, Patient } from '@/src/types';
+import { Appointment, Patient, Visit } from '@/src/types';
 import { formatDate, cn } from '@/src/utils';
 import {
   Calendar as CalendarIcon,
@@ -19,18 +19,20 @@ import {
   Plus,
   Sparkles,
   Search,
+  UserCheck,
 } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { format, parseISO, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 
 interface AppointmentCalendarProps {
   appointments: Appointment[];
+  visits?: Visit[];
   patients?: Patient[];
   onUpdateStatus: (id: string, status: string) => Promise<void>;
   onOpenVisit?: (patient: Patient, appointmentId?: string) => void;
 }
 
-export function AppointmentCalendar({ appointments, patients = [], onUpdateStatus, onOpenVisit }: AppointmentCalendarProps) {
+export function AppointmentCalendar({ appointments, visits = [], patients = [], onUpdateStatus, onOpenVisit }: AppointmentCalendarProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [statusFilter, setStatusFilter] = useState<'All' | 'Pending' | 'Completed' | 'Missed'>('All');
   const [searchQuery, setSearchQuery] = useState('');
@@ -38,12 +40,44 @@ export function AppointmentCalendar({ appointments, patients = [], onUpdateStatu
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
 
+  // 1. Appointments scheduled for this calendar month
   const monthlyAppointments = useMemo(() => {
     return appointments.filter(a => {
       const date = parseISO(a.date);
       return isWithinInterval(date, { start: monthStart, end: monthEnd });
     });
   }, [appointments, monthStart, monthEnd]);
+
+  // 2. Actual physical visits opened/recorded during this calendar month (including walk-ins & rescheduled/missed clients who attended today)
+  const monthlyVisits = useMemo(() => {
+    return visits.filter(v => {
+      try {
+        const date = parseISO(v.date);
+        return isWithinInterval(date, { start: monthStart, end: monthEnd });
+      } catch {
+        return false;
+      }
+    });
+  }, [visits, monthStart, monthEnd]);
+
+  // 3. Unique client IDs who actually visited the clinic this month
+  const uniqueClientsVisitedThisMonth = useMemo(() => {
+    const visitedPatientIds = new Set<string>();
+    
+    // Add all patients who had a visit record opened this month
+    monthlyVisits.forEach(v => {
+      if (v.patientId) visitedPatientIds.add(v.patientId);
+    });
+
+    // Also include any appointments for this month that are marked Completed
+    monthlyAppointments.forEach(a => {
+      if (a.status === 'Completed' && a.patientId) {
+        visitedPatientIds.add(a.patientId);
+      }
+    });
+
+    return visitedPatientIds.size;
+  }, [monthlyVisits, monthlyAppointments]);
 
   const pendingCount = monthlyAppointments.filter(a => a.status === 'Pending').length;
   const completedCount = monthlyAppointments.filter(a => a.status === 'Completed').length;
@@ -350,47 +384,96 @@ export function AppointmentCalendar({ appointments, patients = [], onUpdateStatu
         </Card>
 
         <Card className="space-y-6">
-          <h3 className="font-semibold text-slate-900 dark:text-white">Schedule Summary</h3>
+          <div>
+            <h3 className="font-semibold text-slate-900 dark:text-white">Monthly Summary</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              {format(currentMonth, 'MMMM yyyy')} attendance and clinical activity
+            </p>
+          </div>
+
           <div className="space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-50 dark:border-slate-800 pb-4">
+            {/* Total Actual Clients Visited (From physical visits opened this month + completed appts) */}
+            <div className="flex items-center justify-between border-b border-slate-50 dark:border-slate-800 pb-4 bg-emerald-50/60 dark:bg-emerald-950/20 -mx-6 px-6 py-3 border-y border-emerald-100 dark:border-emerald-900/40">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-900/20">
-                  <CalendarIcon className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">
+                  <UserCheck className="h-5 w-5" />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Monthly Total</p>
+                  <p className="text-xs font-bold text-emerald-900 dark:text-emerald-300">Total Visited This Month</p>
+                  <p className="text-lg font-extrabold text-emerald-700 dark:text-emerald-400 leading-tight">
+                    {uniqueClientsVisitedThisMonth}
+                  </p>
+                </div>
+              </div>
+              <div className="text-right">
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-100/80 dark:bg-emerald-900/40 px-2 py-0.5 rounded-full">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Visits Opened
+                </span>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  {monthlyVisits.length} recorded visit{monthlyVisits.length === 1 ? '' : 's'}
+                </p>
+              </div>
+            </div>
+
+            {/* Scheduled Appointments Total for Month */}
+            <div className="flex items-center justify-between border-b border-slate-50 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-900/20">
+                  <CalendarIcon className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Scheduled Appointments</p>
                   <p className="text-sm font-bold text-slate-900 dark:text-white">{totalCount}</p>
                 </div>
               </div>
-              <span className="text-xs text-slate-400 dark:text-slate-500">This month</span>
+              <span className="text-xs text-slate-400 dark:text-slate-500">Booked for month</span>
             </div>
 
-            <div className="flex items-center justify-between border-b border-slate-50 dark:border-slate-800 pb-4">
+            {/* Scheduled Appointments that are Completed */}
+            <div className="flex items-center justify-between border-b border-slate-50 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-900/20">
-                  <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-900/20">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Completed</p>
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Scheduled & Completed</p>
                   <p className="text-sm font-bold text-slate-900 dark:text-white">{completedCount}</p>
                 </div>
               </div>
-              <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+              <span className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">
                 {Math.round((completedCount / (totalCount || 1)) * 100)}%
               </span>
             </div>
 
-            <div className="flex items-center justify-between">
+            {/* Pending Appointments for Month */}
+            <div className="flex items-center justify-between border-b border-slate-50 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-rose-50 dark:bg-rose-900/20">
-                  <XCircle className="h-5 w-5 text-rose-600 dark:text-rose-400" />
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50 dark:bg-amber-900/20">
+                  <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Missed</p>
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Pending Appointments</p>
+                  <p className="text-sm font-bold text-amber-600 dark:text-amber-400">{pendingCount}</p>
+                </div>
+              </div>
+              <span className="text-xs text-amber-600 dark:text-amber-400 font-semibold">
+                {Math.round((pendingCount / (totalCount || 1)) * 100)}%
+              </span>
+            </div>
+
+            {/* Missed Appointments */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-rose-50 dark:bg-rose-900/20">
+                  <XCircle className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Missed Appointments</p>
                   <p className="text-sm font-bold text-slate-900 dark:text-white">{missedCount}</p>
                 </div>
               </div>
-              <span className="text-xs text-rose-600 dark:text-rose-400 font-medium">
+              <span className="text-xs text-rose-600 dark:text-rose-400 font-semibold">
                 {Math.round((missedCount / (totalCount || 1)) * 100)}%
               </span>
             </div>
@@ -399,10 +482,10 @@ export function AppointmentCalendar({ appointments, patients = [], onUpdateStatu
           <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 p-4 border border-amber-100 dark:border-amber-900/30">
             <div className="flex items-center gap-2 text-amber-800 dark:text-amber-400 mb-2">
               <Clock className="h-4 w-4" />
-              <h4 className="text-xs font-bold uppercase tracking-wider">Reminder Tip</h4>
+              <h4 className="text-xs font-bold uppercase tracking-wider">Attendance Note</h4>
             </div>
             <p className="text-xs text-amber-700 dark:text-amber-500 leading-relaxed">
-              Call patients 2 days before their appointment to confirm attendance and reduce missed visits.
+              When a patient attends a clinic visit (even if their appointment was missed from a previous month or unscheduled), opening and saving their visit counts toward this month&apos;s physical attendance.
             </p>
           </div>
         </Card>

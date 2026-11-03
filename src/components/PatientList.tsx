@@ -23,8 +23,11 @@ import {
   GraduationCap,
   Heart,
   Calendar,
+  Clock,
+  Plus,
 } from 'lucide-react';
 import { useState, useRef } from 'react';
+import { startOfDay, parseISO, differenceInCalendarDays } from 'date-fns';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
@@ -72,18 +75,51 @@ export function PatientList({
     return diffInHours <= 48;
   };
 
-  const getNextAppointment = (patientId: string, patientNextAppt?: string) => {
-    // Find the earliest pending appointment for this patient
+  interface AppointmentUrgencyInfo {
+    hasPending: boolean;
+    isToday: boolean;
+    isPast: boolean;
+    isFuture: boolean;
+    date?: string;
+    daysDiff?: number;
+  }
+
+  const getPatientAppointmentUrgency = (patientId: string, fallbackDate?: string): AppointmentUrgencyInfo => {
+    // Look for earliest pending appointment in the appointments array
     const pendingAppts = appointments
       .filter(a => a.patientId === patientId && a.status === 'Pending')
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     
-    if (pendingAppts.length > 0) {
-      return pendingAppts[0].date;
+    const apptDateStr = pendingAppts.length > 0 ? pendingAppts[0].date : fallbackDate;
+
+    if (!apptDateStr) {
+      return { hasPending: false, isToday: false, isPast: false, isFuture: false };
     }
-    
-    return patientNextAppt;
+
+    try {
+      const today = startOfDay(new Date());
+      const apptDate = startOfDay(parseISO(apptDateStr));
+      const diff = differenceInCalendarDays(apptDate, today);
+
+      if (diff === 0) {
+        return { hasPending: true, isToday: true, isPast: false, isFuture: false, date: apptDateStr, daysDiff: 0 };
+      } else if (diff < 0) {
+        return { hasPending: true, isToday: false, isPast: true, isFuture: false, date: apptDateStr, daysDiff: Math.abs(diff) };
+      } else {
+        return { hasPending: true, isToday: false, isPast: false, isFuture: true, date: apptDateStr, daysDiff: diff };
+      }
+    } catch {
+      return { hasPending: false, isToday: false, isPast: false, isFuture: false };
+    }
   };
+
+  const getNextAppointment = (patientId: string, patientNextAppt?: string) => {
+    const urgency = getPatientAppointmentUrgency(patientId, patientNextAppt);
+    return urgency.date || patientNextAppt;
+  };
+
+  const dueTodayCount = patients.filter(p => getPatientAppointmentUrgency(p.id!, p.nextAppointmentDate).isToday).length;
+  const overdueCount = patients.filter(p => getPatientAppointmentUrgency(p.id!, p.nextAppointmentDate).isPast).length;
 
   const filteredPatients = patients.filter((p) => {
     const matchesSearch =
@@ -94,7 +130,7 @@ export function PatientList({
     
     let matchesFilter = true;
     if (filter === 'Active') matchesFilter = p.ltfuStatus === 'Active';
-    else if (filter === 'With Appointment') matchesFilter = Boolean(getNextAppointment(p.id, p.nextAppointmentDate));
+    else if (filter === 'With Appointment') matchesFilter = Boolean(getPatientAppointmentUrgency(p.id!, p.nextAppointmentDate).hasPending);
     else if (filter === 'OTZ Plus') matchesFilter = Boolean(p.isOtzPlus);
     else if (filter === 'LTFU') matchesFilter = p.ltfuStatus === 'LTFU';
     else if (filter === 'Graduating') matchesFilter = p.age >= 24 && p.ltfuStatus === 'Active';
@@ -102,13 +138,43 @@ export function PatientList({
     
     return matchesSearch && matchesFilter;
   }).sort((a, b) => {
-    if (filter === 'With Appointment') {
-      const apptA = getNextAppointment(a.id, a.nextAppointmentDate);
-      const apptB = getNextAppointment(b.id, b.nextAppointmentDate);
-      if (apptA && !apptB) return -1;
-      if (!apptA && apptB) return 1;
-      if (apptA && apptB) return new Date(apptA).getTime() - new Date(apptB).getTime();
+    const urgencyA = getPatientAppointmentUrgency(a.id!, a.nextAppointmentDate);
+    const urgencyB = getPatientAppointmentUrgency(b.id!, b.nextAppointmentDate);
+
+    // Score hierarchy:
+    // 0: Due today (Pending appointment today - highest priority at very top)
+    // 1: Past / overdue (Pending appointment in the past - priority at top)
+    // 2: Future pending appointment
+    // 3: No pending appointment
+    const getScore = (u: AppointmentUrgencyInfo) => {
+      if (u.isToday) return 0;
+      if (u.isPast) return 1;
+      if (u.isFuture) return 2;
+      return 3;
+    };
+
+    const scoreA = getScore(urgencyA);
+    const scoreB = getScore(urgencyB);
+
+    if (scoreA !== scoreB) {
+      return scoreA - scoreB;
     }
+
+    // Within Today (score 0): sort by clinic number
+    if (scoreA === 0) {
+      return (a.clinicNumber || '').localeCompare(b.clinicNumber || '');
+    }
+
+    // Within Past / Overdue (score 1): sort by closest overdue date first
+    if (scoreA === 1) {
+      return (urgencyA.daysDiff || 0) - (urgencyB.daysDiff || 0);
+    }
+
+    // Within Future (score 2): sort soonest upcoming date first
+    if (scoreA === 2 && urgencyA.date && urgencyB.date) {
+      return new Date(urgencyA.date).getTime() - new Date(urgencyB.date).getTime();
+    }
+
     return 0;
   });
 
@@ -612,6 +678,30 @@ export function PatientList({
           </div>
         </div>
 
+        {(dueTodayCount > 0 || overdueCount > 0) && (
+          <div className="mx-6 mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-950/20 px-4 py-2.5 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white font-bold">
+                <Clock className="h-3.5 w-3.5" />
+              </span>
+              <div>
+                <span className="font-bold text-amber-900 dark:text-amber-200">
+                  Priority Appointments Queue:
+                </span>{' '}
+                <span className="text-amber-800 dark:text-amber-300">
+                  {dueTodayCount > 0 && `${dueTodayCount} appointment${dueTodayCount > 1 ? 's' : ''} due today`}
+                  {dueTodayCount > 0 && overdueCount > 0 && ' • '}
+                  {overdueCount > 0 && `${overdueCount} overdue pending appointment${overdueCount > 1 ? 's' : ''}`}
+                  {' '}automatically sorted to the very top.
+                </span>
+              </div>
+            </div>
+            <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 bg-white/80 dark:bg-slate-900/60 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-800/60 self-start sm:self-auto">
+              Highlighted below
+            </span>
+          </div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -628,80 +718,126 @@ export function PatientList({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
-              {filteredPatients.map((patient) => (
-                <tr
-                  key={patient.id}
-                  className={cn(
-                    "group transition-colors hover:bg-slate-50/50",
-                    patient.isOtzPlus && "bg-fuchsia-50/15"
-                  )}
-                >
-                  <td className="whitespace-nowrap px-6 py-4 font-medium text-slate-900">
-                    <button 
-                      onClick={() => onViewDetails(patient)}
-                      className="hover:text-indigo-600 hover:underline"
-                    >
-                      {maskId(patient.clinicNumber, privacyMode)}
-                    </button>
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4">
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-2">
-                        <button 
-                          onClick={() => onViewDetails(patient)}
-                          className="text-left font-medium text-slate-900 hover:text-indigo-600 hover:underline"
-                        >
-                          {maskName(`${patient.firstName} ${patient.lastName}`, privacyMode)}
-                        </button>
-                        {patient.isOtzPlus && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-fuchsia-100 text-fuchsia-800 px-2 py-0.5 text-[10px] font-bold border border-fuchsia-200">
-                            <Heart className="h-2.5 w-2.5 fill-fuchsia-600 text-fuchsia-600" />
-                            OTZ Plus
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
-                        <span>Enrolled: {formatDate(patient.enrollmentDate)}</span>
-                        {patient.isOtzPlus && patient.otzPlusType && (
-                          <span className="text-[11px] font-medium text-fuchsia-700">
-                            • {patient.otzPlusType}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-slate-600">
-                    {maskPhone(patient.phone, privacyMode)}
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-slate-600">
-                    {patient.age}y / {patient.gender}
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4">
-                    <span
-                      className={cn(
-                        'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
-                        patient.ltfuStatus === 'Active'
-                          ? 'bg-emerald-50 text-emerald-700'
-                          : patient.ltfuStatus === 'Transferred Out'
-                          ? 'bg-amber-50 text-amber-700'
-                          : 'bg-rose-50 text-rose-700'
-                      )}
-                    >
-                      {patient.ltfuStatus}
-                    </span>
-                    {patient.age >= 24 && patient.ltfuStatus === 'Active' && (
-                      <div className="mt-1 flex items-center gap-1 text-[10px] font-medium text-amber-600">
-                        <GraduationCap className="h-3 w-3" />
-                        Graduating Soon
-                      </div>
+              {filteredPatients.map((patient) => {
+                const urgency = getPatientAppointmentUrgency(patient.id!, patient.nextAppointmentDate);
+                return (
+                  <tr
+                    key={patient.id}
+                    className={cn(
+                      "group transition-colors",
+                      urgency.isToday
+                        ? "bg-amber-50/70 hover:bg-amber-100/70 dark:bg-amber-950/30 dark:hover:bg-amber-950/50 border-l-4 border-l-amber-500"
+                        : urgency.isPast
+                        ? "bg-rose-50/50 hover:bg-rose-100/60 dark:bg-rose-950/30 dark:hover:bg-rose-950/50 border-l-4 border-l-rose-500"
+                        : patient.isOtzPlus
+                        ? "bg-fuchsia-50/15 hover:bg-slate-50/50"
+                        : "hover:bg-slate-50/50"
                     )}
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-slate-600">
-                    {formatDate(patient.lastVisitDate)}
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-slate-600">
-                    {formatDate(getNextAppointment(patient.id!, patient.nextAppointmentDate))}
-                  </td>
+                  >
+                    <td className="whitespace-nowrap px-6 py-4 font-medium text-slate-900">
+                      <button 
+                        onClick={() => onViewDetails(patient)}
+                        className="hover:text-indigo-600 hover:underline"
+                      >
+                        {maskId(patient.clinicNumber, privacyMode)}
+                      </button>
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4">
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button 
+                            onClick={() => onViewDetails(patient)}
+                            className="text-left font-medium text-slate-900 hover:text-indigo-600 hover:underline"
+                          >
+                            {maskName(`${patient.firstName} ${patient.lastName}`, privacyMode)}
+                          </button>
+                          {urgency.isToday && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 px-2 py-0.5 text-[10px] font-bold border border-amber-300 dark:border-amber-700 animate-pulse">
+                              <Clock className="h-2.5 w-2.5" />
+                              Due Today
+                            </span>
+                          )}
+                          {urgency.isPast && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-200 px-2 py-0.5 text-[10px] font-bold border border-rose-300 dark:border-rose-700">
+                              <AlertCircle className="h-2.5 w-2.5" />
+                              Overdue ({urgency.daysDiff}d ago)
+                            </span>
+                          )}
+                          {patient.isOtzPlus && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-fuchsia-100 text-fuchsia-800 px-2 py-0.5 text-[10px] font-bold border border-fuchsia-200">
+                              <Heart className="h-2.5 w-2.5 fill-fuchsia-600 text-fuchsia-600" />
+                              OTZ Plus
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                          <span>Enrolled: {formatDate(patient.enrollmentDate)}</span>
+                          {patient.isOtzPlus && patient.otzPlusType && (
+                            <span className="text-[11px] font-medium text-fuchsia-700">
+                              • {patient.otzPlusType}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4 text-slate-600">
+                      {maskPhone(patient.phone, privacyMode)}
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4 text-slate-600">
+                      {patient.age}y / {patient.gender}
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4">
+                      <span
+                        className={cn(
+                          'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
+                          patient.ltfuStatus === 'Active'
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : patient.ltfuStatus === 'Transferred Out'
+                            ? 'bg-amber-50 text-amber-700'
+                            : 'bg-rose-50 text-rose-700'
+                        )}
+                      >
+                        {patient.ltfuStatus}
+                      </span>
+                      {patient.age >= 24 && patient.ltfuStatus === 'Active' && (
+                        <div className="mt-1 flex items-center gap-1 text-[10px] font-medium text-amber-600">
+                          <GraduationCap className="h-3 w-3" />
+                          Graduating Soon
+                        </div>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4 text-slate-600">
+                      {formatDate(patient.lastVisitDate)}
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4">
+                      {urgency.isToday ? (
+                        <div className="flex flex-col">
+                          <span className="font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1 text-xs">
+                            <Clock className="h-3.5 w-3.5 shrink-0" />
+                            Today ({formatDate(urgency.date)})
+                          </span>
+                          <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                            Pending Clinic Visit
+                          </span>
+                        </div>
+                      ) : urgency.isPast ? (
+                        <div className="flex flex-col">
+                          <span className="font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1 text-xs">
+                            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                            {formatDate(urgency.date)}
+                          </span>
+                          <span className="text-[10px] font-semibold text-rose-600 dark:text-rose-400">
+                            Overdue ({urgency.daysDiff}d past due)
+                          </span>
+                        </div>
+                      ) : urgency.date ? (
+                        <span className="text-slate-600 dark:text-slate-300 text-sm">
+                          {formatDate(urgency.date)}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-400 italic">No appt</span>
+                      )}
+                    </td>
                   <td className="whitespace-nowrap px-6 py-4">
                     {(() => {
                       const status = getPatientVlStatus(patient);
@@ -755,6 +891,22 @@ export function PatientList({
                   </td>
                   <td className="whitespace-nowrap px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-2">
+                      {(urgency.isToday || urgency.isPast) && (
+                        <Button
+                          size="sm"
+                          className={cn(
+                            "h-8 gap-1 font-semibold text-xs shadow-xs text-white",
+                            urgency.isToday
+                              ? "bg-amber-600 hover:bg-amber-700"
+                              : "bg-rose-600 hover:bg-rose-700"
+                          )}
+                          onClick={() => onRecordVisit(patient, 'Drug Pickup & VL Test')}
+                          title="Attend to pending appointment now"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          Attend
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="sm"
@@ -817,7 +969,8 @@ export function PatientList({
                     </div>
                   </td>
                 </tr>
-              ))}
+              );
+            })}
             </tbody>
           </table>
         </div>

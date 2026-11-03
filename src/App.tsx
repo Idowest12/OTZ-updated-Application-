@@ -708,6 +708,7 @@ export default function App() {
         return (
           <AppointmentCalendar 
             appointments={appointments} 
+            visits={visits}
             patients={patients}
             onUpdateStatus={async (id, status) => {
               await updateAppointmentStatus(id, status);
